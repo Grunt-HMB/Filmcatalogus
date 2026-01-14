@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import dropbox
-import re
 
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
@@ -34,14 +33,14 @@ st.markdown("## 🎬 Filmcatalogus")
 st.markdown(
     """
     <style>
-    .biginput input {
+    .stTextInput input {
         font-size: 22px !important;
-        padding: 12px !important;
+        padding: 14px !important;
     }
     .filmcard {
-        padding: 12px;
-        border-radius: 10px;
-        margin-bottom: 10px;
+        padding: 14px;
+        border-radius: 12px;
+        margin-bottom: 12px;
         background-color: #1e1e1e;
     }
     </style>
@@ -49,7 +48,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-query = st.text_input("🔍 Zoek film", "", key="search", help="Typ een deel van de titel")
+query = st.text_input("🔍 Zoek film")
 
 df = load_data()
 
