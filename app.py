@@ -10,21 +10,37 @@ DROPBOX_PATH = "/DBase-Films.db"
 # ---------- Dropbox ----------
 @st.cache_data(ttl=600)
 def download_db():
-    dbx = dropbox.Dropbox(st.secrets["DROPBOX_TOKEN"])
-    md, res = dbx.files_download(DROPBOX_PATH)
-    with open("films.db", "wb") as f:
-        f.write(res.content)
-    return "films.db"
+    try:
+        token = st.secrets["DROPBOX_TOKEN"]
+    except:
+        st.error("❌ Dropbox token ontbreekt in Streamlit secrets")
+        st.stop()
+
+    try:
+        dbx = dropbox.Dropbox(token)
+        md, res = dbx.files_download(DROPBOX_PATH)
+        with open("films.db", "wb") as f:
+            f.write(res.content)
+        return "films.db"
+    except Exception as e:
+        st.error("❌ Kan database niet downloaden van Dropbox")
+        st.code(str(e))
+        st.stop()
 
 
 # ---------- Load data ----------
 @st.cache_data(ttl=600)
 def load_data():
-    db = download_db()
-    conn = sqlite3.connect(db)
-    df = pd.read_sql_query("SELECT FILM, JAAR, BEKEKEN FROM tbl_DBase_Films", conn)
-    conn.close()
-    return df
+    try:
+        db = download_db()
+        conn = sqlite3.connect(db)
+        df = pd.read_sql_query("SELECT FILM, JAAR, BEKEKEN FROM tbl_DBase_Films", conn)
+        conn.close()
+        return df
+    except Exception as e:
+        st.error("❌ Kan database niet lezen")
+        st.code(str(e))
+        st.stop()
 
 
 # ---------- UI ----------
