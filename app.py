@@ -7,7 +7,7 @@ import re
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
 DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
-OMDB_KEY = st.secrets["d5f7b4f9"]
+OMDB_KEY = st.secrets["OMDB_KEY"]
 
 # ---------------- Download DB ----------------
 @st.cache_data(ttl=600)
