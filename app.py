@@ -100,8 +100,8 @@ else:
 
 # Render films
 for _, row in view.iterrows():
-    poster = get_poster(row["IMDBLINK"])
     imdb_id = row["IMDBLINK"]
+    poster = get_poster(imdb_id)
     imdb = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
 
 
