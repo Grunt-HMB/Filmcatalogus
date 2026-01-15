@@ -7,7 +7,8 @@ import io
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
 # 🔗 VERVANG DIT door jouw Dropbox raw-link
-DROPBOX_DB_URL = "https://www.dropbox.com/s/XXXXXXXX/DBase-Films.db?raw=1"
+DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
+
 
 # ---------------- Download DB ----------------
 @st.cache_data(ttl=600)
