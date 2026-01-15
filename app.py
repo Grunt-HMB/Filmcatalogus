@@ -54,7 +54,8 @@ def normalize_title(t):
 # ---------------- UI ----------------
 st.markdown("## 🎬 Filmcatalogus")
 
-mobile_mode = st.checkbox("📱 Mobiele weergave", value=True)
+# Desktop default = all results, Mobile = paging
+mobile_mode = st.checkbox("📱 Mobiele weergave", value=False)
 
 query = st.text_input("🔍 Zoek film")
 
@@ -76,10 +77,11 @@ results = results.sort_values("__sort")
 
 st.caption(f"🎞️ {len(results)} films gevonden")
 
-# Paging only when mobile
+# ---------------- Paging (mobile only) ----------------
 if mobile_mode:
     if "page" not in st.session_state:
         st.session_state.page = 0
+
     page_size = 5
     start = st.session_state.page * page_size
     end = start + page_size
@@ -89,7 +91,11 @@ else:
 
 # ---------------- Render ----------------
 for _, row in view.iterrows():
-    imdb_id = row["IMDBLINK"]
+
+    raw = str(row["IMDBLINK"])
+    m = re.search(r"(tt\d+)", raw)
+    imdb_id = m.group(1) if m else None
+
     poster = get_poster(imdb_id)
     imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
 
