@@ -30,7 +30,7 @@ def load_data():
     conn.close()
     return df
 
-# ---------------- OMDb poster ----------------
+# ---------------- OMDb ----------------
 @st.cache_data(ttl=86400)
 def get_poster(imdb_id):
     if not imdb_id:
@@ -38,13 +38,13 @@ def get_poster(imdb_id):
     url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
     r = requests.get(url)
     data = r.json()
-    if "Poster" in data and data["Poster"] != "N/A":
+    if data.get("Poster") and data["Poster"] != "N/A":
         return data["Poster"]
     return None
 
 # ---------------- Sorting ----------------
 def normalize_title(t):
-    t = t.lower()
+    t = str(t).lower()
     t = t.replace("꞉", ":")
     if t.startswith("the "):
         t = t[4:]
@@ -76,7 +76,7 @@ results = results.sort_values("__sort")
 
 st.caption(f"🎞️ {len(results)} films gevonden")
 
-# Paging only when mobile_mode
+# Paging only when mobile
 if mobile_mode:
     if "page" not in st.session_state:
         st.session_state.page = 0
@@ -87,11 +87,11 @@ if mobile_mode:
 else:
     view = results
 
-# Render films
+# ---------------- Render ----------------
 for _, row in view.iterrows():
     imdb_id = row["IMDBLINK"]
     poster = get_poster(imdb_id)
-    imdb = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
+    imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
 
     title = row["FILM"]
     year = row["JAAR"]
@@ -107,7 +107,7 @@ for _, row in view.iterrows():
         <div style="display:flex;gap:12px;padding:10px;background:#1e1e1e;border-radius:12px;margin-bottom:12px;">
             {"<img src='"+poster+"' style='width:70px'>" if poster else ""}
             <div>
-                <a href="{imdb}" target="_blank"><b>{title}</b></a> ({year})<br>
+                <a href="{imdb_url}" target="_blank"><b>{title}</b></a> ({year})<br>
                 {seen_text}
             </div>
         </div>
@@ -115,7 +115,7 @@ for _, row in view.iterrows():
         unsafe_allow_html=True
     )
 
-# Mobile navigation
+# ---------------- Mobile navigation ----------------
 if mobile_mode:
     col1, col2 = st.columns(2)
     with col1:
