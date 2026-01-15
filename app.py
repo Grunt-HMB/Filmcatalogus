@@ -1,40 +1,42 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import dropbox
+import requests
+import io
 
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
-DROPBOX_PATH = "/DBase-Films.db"
+# 🔗 VERVANG DIT door jouw Dropbox raw-link
+DROPBOX_DB_URL = "https://www.dropbox.com/s/XXXXXXXX/DBase-Films.db?raw=1"
 
-# ---------- Dropbox ----------
+# ---------------- Download DB ----------------
 @st.cache_data(ttl=600)
 def download_db():
     try:
-        token = st.secrets["DROPBOX_TOKEN"]
-    except:
-        st.error("❌ Dropbox token ontbreekt in Streamlit secrets")
-        st.stop()
+        r = requests.get(DROPBOX_DB_URL, timeout=20)
+        r.raise_for_status()
 
-    try:
-        dbx = dropbox.Dropbox(token)
-        md, res = dbx.files_download(DROPBOX_PATH)
         with open("films.db", "wb") as f:
-            f.write(res.content)
+            f.write(r.content)
+
         return "films.db"
+
     except Exception as e:
-        st.error("❌ Kan database niet downloaden van Dropbox")
+        st.error("❌ Kan database niet downloaden")
         st.code(str(e))
         st.stop()
 
 
-# ---------- Load data ----------
+# ---------------- Load data ----------------
 @st.cache_data(ttl=600)
 def load_data():
     try:
         db = download_db()
         conn = sqlite3.connect(db)
-        df = pd.read_sql_query("SELECT FILM, JAAR, BEKEKEN FROM tbl_DBase_Films", conn)
+        df = pd.read_sql_query(
+            "SELECT FILM, JAAR, BEKEKEN FROM tbl_DBase_Films",
+            conn
+        )
         conn.close()
         return df
     except Exception as e:
@@ -43,7 +45,7 @@ def load_data():
         st.stop()
 
 
-# ---------- UI ----------
+# ---------------- UI ----------------
 st.markdown("## 🎬 Filmcatalogus")
 
 st.markdown(
