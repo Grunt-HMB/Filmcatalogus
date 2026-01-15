@@ -7,6 +7,7 @@ import re
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
 DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
+OMDB_KEY = st.secrets["d5f7b4f9"]
 
 # ---------------- Download DB ----------------
 @st.cache_data(ttl=600)
@@ -23,11 +24,24 @@ def load_data():
     db = download_db()
     conn = sqlite3.connect(db)
     df = pd.read_sql_query(
-        "SELECT FILM, JAAR, BEKEKEN FROM tbl_DBase_Films",
+        "SELECT FILM, JAAR, BEKEKEN, IMDBLINK FROM tbl_DBase_Films",
         conn
     )
     conn.close()
     return df
+
+# ---------------- OMDb ----------------
+@st.cache_data(ttl=86400)
+def get_poster(imdb_link):
+    if not imdb_link:
+        return None
+    imdb_id = imdb_link.split("/")[-1].replace("/", "")
+    url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
+    r = requests.get(url)
+    data = r.json()
+    if "Poster" in data and data["Poster"] != "N/A":
+        return data["Poster"]
+    return None
 
 # ---------------- Sorting ----------------
 def normalize_title(t):
@@ -40,25 +54,6 @@ def normalize_title(t):
 
 # ---------------- UI ----------------
 st.markdown("## 🎬 Filmcatalogus")
-
-st.markdown(
-    """
-    <style>
-    .stTextInput input {
-        font-size: 22px !important;
-        padding: 14px !important;
-    }
-    .filmcard {
-        padding: 14px;
-        border-radius: 12px;
-        margin-bottom: 12px;
-        background-color: #1e1e1e;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
 query = st.text_input("🔍 Zoek film")
 
 df = load_data()
@@ -68,55 +63,69 @@ if query:
 else:
     results = pd.DataFrame()
 
-if not results.empty:
-    results = results.copy()
-    results["__sort"] = results["FILM"].apply(normalize_title)
-    results = results.sort_values("__sort")
+if results.empty:
+    if query:
+        st.info("Geen films gevonden")
+    st.stop()
 
-    st.caption(f"🎞️ {len(results)} films gevonden")
+results = results.copy()
+results["__sort"] = results["FILM"].apply(normalize_title)
+results = results.sort_values("__sort")
 
+st.caption(f"🎞️ {len(results)} films gevonden")
+
+# Detect mobile by column width
+container = st.container()
+is_mobile = container.width < 700
+
+# Paging only on mobile
+if is_mobile:
     if "page" not in st.session_state:
         st.session_state.page = 0
-
     page_size = 5
     start = st.session_state.page * page_size
     end = start + page_size
-    page = results.iloc[start:end]
+    view = results.iloc[start:end]
+else:
+    view = results
 
-    for _, row in page.iterrows():
-        title = row["FILM"]
-        year = row["JAAR"]
-        seen = row["BEKEKEN"]
+# Render
+for _, row in view.iterrows():
+    poster = get_poster(row["IMDBLINK"])
+    imdb = row["IMDBLINK"]
 
-        if pd.isna(seen) or seen == "":
-            seen_text = "🔴 Nooit gezien"
-        else:
-            seen_text = f"🟢 Laatst gezien: {seen}"
+    title = row["FILM"]
+    year = row["JAAR"]
+    seen = row["BEKEKEN"]
 
-        st.markdown(
-            f"""
-            <div class="filmcard">
-            <b>{title}</b> ({year})<br>
-            {seen_text}
+    if pd.isna(seen) or seen == "":
+        seen_text = "🔴 Nooit gezien"
+    else:
+        seen_text = f"🟢 Laatst gezien: {seen}"
+
+    st.markdown(
+        f"""
+        <div style="display:flex;gap:12px;padding:10px;background:#1e1e1e;border-radius:12px;margin-bottom:12px;">
+            {"<img src='"+poster+"' style='width:70px'>" if poster else ""}
+            <div>
+                <a href="{imdb}" target="_blank"><b>{title}</b></a> ({year})<br>
+                {seen_text}
             </div>
-            """,
-            unsafe_allow_html=True
-        )
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
+# Mobile navigation
+if is_mobile:
     col1, col2 = st.columns(2)
-
     with col1:
         if st.session_state.page > 0:
             if st.button("⬅ Vorige"):
                 st.session_state.page -= 1
                 st.rerun()
-
     with col2:
         if end < len(results):
             if st.button("➡ Volgende"):
                 st.session_state.page += 1
                 st.rerun()
-
-else:
-    if query:
-        st.info("Geen films gevonden")
