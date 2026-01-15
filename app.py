@@ -42,19 +42,23 @@ def get_poster(imdb_id):
         return data["Poster"]
     return None
 
-# ---------------- Sorting ----------------
-def normalize_title(t):
-    t = str(t).lower()
-    t = t.replace("꞉", ":")
-    if t.startswith("the "):
-        t = t[4:]
-    t = re.sub(r"[^a-z0-9 ]", "", t)
-    return t
+# ---------------- IMDb ID helper ----------------
+def extract_imdb_id(raw):
+    if not raw:
+        return None
+    m = re.search(r"(tt\d+)", str(raw))
+    return m.group(1) if m else None
 
 # ---------------- UI ----------------
 st.markdown("## 🎬 Filmcatalogus")
 
 mobile_mode = st.checkbox("📱 Mobiele weergave", value=False)
+
+sort_mode = st.radio(
+    "Sorteer op",
+    ["Titel", "Jaar (nieuw → oud)", "Jaar (oud → nieuw)"],
+    horizontal=True
+)
 
 query = st.text_input("🔍 Zoek film")
 
@@ -70,9 +74,13 @@ if results.empty:
         st.info("Geen films gevonden")
     st.stop()
 
-results = results.copy()
-results["__sort"] = results["FILM"].apply(normalize_title)
-results = results.sort_values("__sort")
+# ---------------- Sorting ----------------
+if sort_mode == "Titel":
+    results = results.sort_values("FILM", key=lambda s: s.str.lower())
+elif sort_mode == "Jaar (nieuw → oud)":
+    results = results.sort_values("JAAR", ascending=False)
+else:
+    results = results.sort_values("JAAR", ascending=True)
 
 st.caption(f"🎞️ {len(results)} films gevonden")
 
@@ -91,10 +99,7 @@ else:
 # ---------------- Render ----------------
 for _, row in view.iterrows():
 
-    raw = str(row["IMDBLINK"])
-    m = re.search(r"(tt\d+)", raw)
-    imdb_id = m.group(1) if m else None
-
+    imdb_id = extract_imdb_id(row["IMDBLINK"])
     poster = get_poster(imdb_id)
     imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else None
 
@@ -118,6 +123,7 @@ for _, row in view.iterrows():
             st.markdown(f"**[{title}]({imdb_url})** ({year})")
         else:
             st.markdown(f"**{title}** ({year})")
+
         st.markdown(seen_text)
 
     st.divider()
