@@ -7,9 +7,7 @@ import re
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
 DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
-#  OMDB_KEY = st.secrets["OMDB_KEY"]
-OMDB_KEY = "d5f7b4f9"
-
+OMDB_KEY = st.secrets["OMDB_KEY"]
 
 # ---------------- Download DB ----------------
 @st.cache_data(ttl=600)
@@ -56,7 +54,6 @@ def normalize_title(t):
 # ---------------- UI ----------------
 st.markdown("## 🎬 Filmcatalogus")
 
-# Desktop default = all results, Mobile = paging
 mobile_mode = st.checkbox("📱 Mobiele weergave", value=False)
 
 query = st.text_input("🔍 Zoek film")
@@ -99,7 +96,7 @@ for _, row in view.iterrows():
     imdb_id = m.group(1) if m else None
 
     poster = get_poster(imdb_id)
-    imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
+    imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else None
 
     title = row["FILM"]
     year = row["JAAR"]
@@ -110,18 +107,20 @@ for _, row in view.iterrows():
     else:
         seen_text = f"🟢 Laatst gezien: {seen}"
 
-    st.markdown(
-        f"""
-        <div style="display:flex;gap:12px;padding:10px;background:#1e1e1e;border-radius:12px;margin-bottom:12px;">
-            {"<img src='"+poster+"' style='width:70px'>" if poster else ""}
-            <div>
-                <a href="{imdb_url}" target="_blank"><b>{title}</b></a> ({year})<br>
-                {seen_text}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+    col1, col2 = st.columns([1, 4])
+
+    with col1:
+        if poster:
+            st.image(poster, width=80)
+
+    with col2:
+        if imdb_url:
+            st.markdown(f"**[{title}]({imdb_url})** ({year})")
+        else:
+            st.markdown(f"**{title}** ({year})")
+        st.markdown(seen_text)
+
+    st.divider()
 
 # ---------------- Mobile navigation ----------------
 if mobile_mode:
