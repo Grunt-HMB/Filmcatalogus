@@ -35,7 +35,17 @@ def load_data():
 def get_poster(imdb_link):
     if not imdb_link:
         return None
-    imdb_id = imdb_link.split("/")[-1].replace("/", "")
+    @st.cache_data(ttl=86400)
+    def get_poster(imdb_id):
+    if not imdb_id:
+        return None
+    url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
+    r = requests.get(url)
+    data = r.json()
+    if "Poster" in data and data["Poster"] != "N/A":
+        return data["Poster"]
+    return None
+
     url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
     r = requests.get(url)
     data = r.json()
@@ -91,7 +101,9 @@ else:
 # Render films
 for _, row in view.iterrows():
     poster = get_poster(row["IMDBLINK"])
-    imdb = row["IMDBLINK"]
+    imdb_id = row["IMDBLINK"]
+    imdb = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
+
 
     title = row["FILM"]
     year = row["JAAR"]
