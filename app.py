@@ -2,11 +2,10 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import requests
-import io
 
 st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
-# 🔗 VERVANG DIT door jouw Dropbox raw-link
+# 🔗 Dropbox raw download link
 DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 
 
@@ -16,12 +15,9 @@ def download_db():
     try:
         r = requests.get(DROPBOX_DB_URL, timeout=20)
         r.raise_for_status()
-
         with open("films.db", "wb") as f:
             f.write(r.content)
-
         return "films.db"
-
     except Exception as e:
         st.error("❌ Kan database niet downloaden")
         st.code(str(e))
@@ -77,16 +73,11 @@ else:
     results = pd.DataFrame()
 
 if not results.empty:
+    results = results.sort_values("FILM")
 
-results = results.sort_values("FILM")
+    st.caption(f"🎞️ {len(results)} films gevonden")
 
-st.caption(f"🎞️ {len(results)} films gevonden")
-
-for _, row in results.iterrows():
-
-
-
-        
+    for _, row in results.iterrows():
         title = row["FILM"]
         year = row["JAAR"]
         seen = row["BEKEKEN"]
