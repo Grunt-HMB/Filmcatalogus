@@ -30,22 +30,11 @@ def load_data():
     conn.close()
     return df
 
-# ---------------- OMDb ----------------
+# ---------------- OMDb poster ----------------
 @st.cache_data(ttl=86400)
-def get_poster(imdb_link):
-    if not imdb_link:
-        return None
-    @st.cache_data(ttl=86400)
-    def get_poster(imdb_id):
+def get_poster(imdb_id):
     if not imdb_id:
         return None
-    url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
-    r = requests.get(url)
-    data = r.json()
-    if "Poster" in data and data["Poster"] != "N/A":
-        return data["Poster"]
-    return None
-
     url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
     r = requests.get(url)
     data = r.json()
@@ -103,7 +92,6 @@ for _, row in view.iterrows():
     imdb_id = row["IMDBLINK"]
     poster = get_poster(imdb_id)
     imdb = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else ""
-
 
     title = row["FILM"]
     year = row["JAAR"]
