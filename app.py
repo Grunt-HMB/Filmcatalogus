@@ -77,7 +77,16 @@ else:
     results = pd.DataFrame()
 
 if not results.empty:
-    for _, row in results.sort_values("FILM").head(50).iterrows():
+
+results = results.sort_values("FILM")
+
+st.caption(f"🎞️ {len(results)} films gevonden")
+
+for _, row in results.iterrows():
+
+
+
+        
         title = row["FILM"]
         year = row["JAAR"]
         seen = row["BEKEKEN"]
