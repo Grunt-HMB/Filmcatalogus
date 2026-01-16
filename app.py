@@ -95,20 +95,32 @@ def rating_to_stars(raw):
     return ""
 
 
-@st.cache_data(ttl=300)
-def get_poster(imdb_id):
+@st.cache_data(ttl=3600)
+def get_imdb_info(imdb_id):
+    """
+    Haalt poster + plot op in 1 call
+    """
     if not imdb_id or not OMDB_KEY:
-        return None
+        return None, None
+
     r = requests.get(
-        f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}",
+        f"https://www.omdbapi.com/?i={imdb_id}&plot=full&apikey={OMDB_KEY}",
         timeout=10
     )
     try:
         data = r.json()
     except Exception:
-        return None
+        return None, None
+
     poster = data.get("Poster")
-    return poster if poster and poster != "N/A" else None
+    plot = data.get("Plot")
+
+    if poster == "N/A":
+        poster = None
+    if plot == "N/A":
+        plot = None
+
+    return poster, plot
 
 # -------------------------------------------------
 # SORT STATE (klik = toggle)
@@ -117,9 +129,9 @@ if "sort_field" not in st.session_state:
     st.session_state.sort_field = "JAAR"
     st.session_state.sort_asc = True
 
-colA, colB = st.columns(2)
+c1, c2 = st.columns(2)
 
-with colA:
+with c1:
     if st.button("Naam"):
         if st.session_state.sort_field == "FILM":
             st.session_state.sort_asc = not st.session_state.sort_asc
@@ -127,7 +139,7 @@ with colA:
             st.session_state.sort_field = "FILM"
             st.session_state.sort_asc = True
 
-with colB:
+with c2:
     if st.button("Jaar"):
         if st.session_state.sort_field == "JAAR":
             st.session_state.sort_asc = not st.session_state.sort_asc
@@ -152,7 +164,7 @@ if results.empty:
     st.stop()
 
 # -------------------------------------------------
-# SORT (ENKEL HIER SORTEREN)
+# SORT
 # -------------------------------------------------
 if st.session_state.sort_field == "FILM":
     results = results.sort_values(
@@ -166,7 +178,7 @@ else:
     )
 
 # -------------------------------------------------
-# GROUP BY IMDb (NIET SORTEREN)
+# GROUP BY IMDb
 # -------------------------------------------------
 groups = results.groupby("IMDB_ID", sort=False)
 
@@ -175,17 +187,22 @@ groups = results.groupby("IMDB_ID", sort=False)
 # -------------------------------------------------
 for imdb_id, group in groups:
 
-    poster = get_poster(imdb_id)
+    poster, plot = get_imdb_info(imdb_id)
 
-    col_poster, col_versions = st.columns([1.2, 4])
+    col_poster, col_content = st.columns([1.3, 4])
 
     with col_poster:
         if poster:
-            st.image(poster, width=140)
+            st.image(poster, width=150)
         else:
             st.caption("🖼️ geen poster")
 
-    with col_versions:
+    with col_content:
+        if plot:
+            st.markdown(f"_{plot}_")
+        else:
+            st.caption("Geen plot beschikbaar")
+
         cols = st.columns(len(group))
 
         for col, (_, row) in zip(cols, group.iterrows()):
