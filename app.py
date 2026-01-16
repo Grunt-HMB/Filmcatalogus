@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# CONFIG – Dropbox (MOET dl=1 zijn)
+# CONFIG – Dropbox (ALTIJD dl=1)
 # -------------------------------------------------
 FILMS_DB_URL = (
     "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
@@ -100,7 +100,7 @@ def load_films():
     df["BEKEKEN_STD"] = df[bekeken_col] if bekeken_col else ""
     df["RATING_STD"] = df[rating_col] if rating_col else ""
 
-    df["IMDB_ID"] = df["IMDBLINK_STD"].str.extract(r"(tt\d{7,9})")
+    df["IMDB_ID"] = df["IMDBLINK_STD"].str.extract(r"(tt\\d{7,9})")
     df["FILM_LC"] = df["FILM_STD"].fillna("").str.lower()
     df["RATING_UC"] = df["RATING_STD"].fillna("").str.upper()
 
@@ -152,14 +152,7 @@ def parse_mfi(mfi):
     return duration, resolution, codec, filename
 
 # -------------------------------------------------
-# Load data
-# -------------------------------------------------
-films = load_films()
-moviemeter = load_moviemeter()
-mfi = load_mfi()
-
-# -------------------------------------------------
-# Ratings (definitief)
+# Ratings (definitief – geen ⭐⭐⭐+)
 # -------------------------------------------------
 RATINGS = {
     "stars4": {"label":"⭐⭐⭐⭐","db":["TPR"],"class":"green"},
@@ -171,19 +164,39 @@ RATINGS = {
 }
 
 # -------------------------------------------------
-# Badge counts (volledige DB)
-# -------------------------------------------------
-badge_counts = {
-    k: films[films["RATING_UC"].isin(v["db"])]["IMDB_ID"].nunique()
-    for k,v in RATINGS.items()
-}
-
-# -------------------------------------------------
 # URL state
 # -------------------------------------------------
 active_rating = st.query_params.get("rating")
 if active_rating not in RATINGS:
     active_rating = None
+
+# -------------------------------------------------
+# SEARCH
+# -------------------------------------------------
+query = st.text_input("🔍 Zoek film (optioneel)")
+
+# -------------------------------------------------
+# Start-gedrag: niets laden
+# -------------------------------------------------
+if not active_rating and not query:
+    st.info("Zoek een film of kies een beoordeling ⭐")
+    st.stop()
+
+# -------------------------------------------------
+# LAZY LOAD (ESSENTIEEL)
+# -------------------------------------------------
+with st.spinner("Databases laden…"):
+    films = load_films()
+    moviemeter = load_moviemeter()
+    mfi = load_mfi()
+
+# -------------------------------------------------
+# Badges (na load)
+# -------------------------------------------------
+badge_counts = {
+    k: films[films["RATING_UC"].isin(v["db"])]["IMDB_ID"].nunique()
+    for k,v in RATINGS.items()
+}
 
 # -------------------------------------------------
 # UI – chips
@@ -209,16 +222,7 @@ chip_html += "</div>"
 st.markdown(chip_html, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# SEARCH
-# -------------------------------------------------
-query = st.text_input("🔍 Zoek film (optioneel)")
-
-if not active_rating and not query:
-    st.info("Zoek een film of kies een beoordeling ⭐")
-    st.stop()
-
-# -------------------------------------------------
-# Filter
+# FILTER
 # -------------------------------------------------
 results = films.copy()
 
@@ -235,7 +239,7 @@ if results.empty:
 st.caption(f"{results['IMDB_ID'].nunique()} films gevonden")
 
 # -------------------------------------------------
-# Render
+# RENDER
 # -------------------------------------------------
 for imdb_id, g in results.groupby("IMDB_ID", sort=False):
     r = g.iloc[0]
