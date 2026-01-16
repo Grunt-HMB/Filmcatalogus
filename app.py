@@ -53,17 +53,14 @@ def load_films():
         SELECT
             FILM,
             JAAR,
-            LENGTE,
-            BEKEKEN,
-            IMDBLINK,
-            FILMRATING
+            IMDBLINK
         FROM tbl_DBase_Films
         """,
         conn
     )
     conn.close()
-    df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
+    df["FILM_LC"] = df["FILM"].str.lower()
     return df
 
 
@@ -91,31 +88,30 @@ def load_mfi():
 # -------------------------------------------------
 # Helpers
 # -------------------------------------------------
-def extract_resolution(text):
-    m = re.search(r"(\d{3,4})\s*x\s*(\d{3,4})", text)
-    return f"{m.group(1)}x{m.group(2)}" if m else "?"
+def parse_mfi_tokens(mfi_text):
+    tokens = [t.strip() for t in mfi_text.split("§") if t.strip()]
 
+    duration = tokens[0] if len(tokens) > 0 else "?"
+    resolution = tokens[3] if len(tokens) > 3 else "?"
+    codec_raw = tokens[5] if len(tokens) > 5 else "?"
+    filename = os.path.basename(tokens[-1]) if tokens else "?"
 
-def extract_video_codec(text):
-    m = re.search(r"\b(HEVC|H\.?265|AVC|H\.?264|AV1|VP9)\b", text, re.I)
-    if not m:
-        return "?"
-    c = m.group(1).upper()
-    if c in ("H265", "H.265"):
-        return "HEVC"
-    if c in ("H264", "H.264"):
-        return "AVC"
-    return c
+    codec = "?"
+    if "HEVC" in codec_raw or "H265" in codec_raw:
+        codec = "HEVC"
+    elif "AVC" in codec_raw or "H264" in codec_raw:
+        codec = "AVC"
+    elif "AV1" in codec_raw:
+        codec = "AV1"
 
-
-def extract_filename(text):
-    return os.path.basename(text.rsplit("§", 1)[-1])
+    return duration, resolution, codec, filename
 
 
 @st.cache_data(ttl=3600)
-def get_poster_omdb(imdb_id):
+def get_poster_and_imdb(imdb_id):
     if not imdb_id or not OMDB_KEY:
-        return None
+        return None, None
+
     r = requests.get(
         "https://www.omdbapi.com/",
         params={"i": imdb_id, "apikey": OMDB_KEY},
@@ -124,12 +120,18 @@ def get_poster_omdb(imdb_id):
     try:
         data = r.json()
     except Exception:
-        return None
+        return None, None
+
     poster = data.get("Poster")
-    return poster if poster and poster != "N/A" else None
+    imdb_url = f"https://www.imdb.com/title/{imdb_id}/"
+
+    if poster == "N/A":
+        poster = None
+
+    return poster, imdb_url
 
 # -------------------------------------------------
-# Load data
+# Load all data
 # -------------------------------------------------
 films_df = load_films()
 moviemeter_df = load_moviemeter()
@@ -157,13 +159,17 @@ for imdb_id, group in groups:
     title = group.iloc[0]["FILM"]
     year = group.iloc[0]["JAAR"]
 
-    poster = get_poster_omdb(imdb_id)
+    poster, imdb_url = get_poster_and_imdb(imdb_id)
 
     col_poster, col_main = st.columns([1.1, 4])
 
     with col_poster:
         if poster:
-            st.image(poster, width=150)
+            st.markdown(
+                f'<a href="{imdb_url}" target="_blank">'
+                f'<img src="{poster}" width="150"></a>',
+                unsafe_allow_html=True
+            )
         else:
             st.caption("🖼️ geen cover")
 
@@ -179,11 +185,9 @@ for imdb_id, group in groups:
         if not mfi_hits.empty:
             st.markdown("**Bestanden**")
             for _, r in mfi_hits.iterrows():
-                txt = r["MFI"]
-                filename = extract_filename(txt)
-                res = extract_resolution(txt)
-                codec = extract_video_codec(txt)
-
-                st.markdown(f"- **{filename}**  \n  {res} – {codec}")
+                duration, res, codec, fname = parse_mfi_tokens(r["MFI"])
+                st.markdown(
+                    f"- **{fname}**  \n  ⏱ {duration} – {res} – {codec}"
+                )
 
     st.divider()
