@@ -35,7 +35,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# CONFIG – Dropbox raw URLs
+# CONFIG – Dropbox raw URLs (ONGEWIJZIGD)
 # -------------------------------------------------
 FILMS_DB_URL = (
     "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
@@ -66,7 +66,7 @@ def download_db(url, local_name):
     return local_name
 
 # -------------------------------------------------
-# Load databases  (ONGEWIJZIGD – STABIEL)
+# Load databases (STABIEL)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_films():
@@ -77,7 +77,9 @@ def load_films():
     )
     conn.close()
 
-    df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\\d{7,9})")
+    # 🔑 CRUCIAAL: JUISTE REGEX
+    df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
+
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["RATING_UC"] = df["FILMRATING"].fillna("").str.upper()
     return df
@@ -146,7 +148,11 @@ def get_poster_and_imdb(imdb_id):
         params={"i": imdb_id, "apikey": OMDB_KEY},
         timeout=10
     )
-    data = r.json()
+    try:
+        data = r.json()
+    except:
+        return None, None
+
     poster = data.get("Poster")
     if poster == "N/A":
         poster = None
@@ -160,7 +166,7 @@ moviemeter = load_moviemeter()
 mfi = load_mfi()
 
 # -------------------------------------------------
-# RATING CHIPS (LOGISCH MODEL)
+# RATING CHIPS
 # -------------------------------------------------
 RATINGS = {
     "⭐⭐⭐⭐": (["TPR"], "star4"),
@@ -171,29 +177,34 @@ RATINGS = {
     "BOX": (["BOX"], "box")
 }
 
-active_chip = st.session_state.get("active_chip")
+if "active_chip" not in st.session_state:
+    st.session_state.active_chip = None
 
 st.markdown("### Beoordeling")
-st.markdown("<div class='chip-row'>", unsafe_allow_html=True)
+cols = st.columns(len(RATINGS) + 1)
 
-for label, (codes, css) in RATINGS.items():
+with cols[0]:
+    if st.button(f"Alles ({films['IMDB_ID'].nunique()})"):
+        st.session_state.active_chip = None
+
+for col, (label, (codes, _)) in zip(cols[1:], RATINGS.items()):
     count = films[films["RATING_UC"].isin(codes)]["IMDB_ID"].nunique()
-    if st.button(f"{label} ({count})"):
-        st.session_state.active_chip = label
-    st.markdown("</div>", unsafe_allow_html=True)
+    with col:
+        if st.button(f"{label} ({count})"):
+            st.session_state.active_chip = label
 
 # -------------------------------------------------
 # SEARCH
 # -------------------------------------------------
 query = st.text_input("🔍 Zoek film (optioneel)")
 
-if not query and not st.session_state.get("active_chip"):
+if not query and not st.session_state.active_chip:
     st.info("Zoek een film of klik op een ⭐-chip")
     st.stop()
 
 results = films.copy()
 
-if st.session_state.get("active_chip"):
+if st.session_state.active_chip:
     codes = RATINGS[st.session_state.active_chip][0]
     results = results[results["RATING_UC"].isin(codes)]
 
@@ -208,7 +219,6 @@ if results.empty:
 # RENDER
 # -------------------------------------------------
 for imdb_id, group in results.groupby("IMDB_ID", sort=False):
-
     row = group.iloc[0]
     poster, imdb_url = get_poster_and_imdb(imdb_id)
 
