@@ -57,30 +57,15 @@ def load_data():
     )
     conn.close()
 
-    # 🔎 index voor sneller zoeken
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
+    df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
 
     return df
 
 # -------------------------------------------------
 # Helpers
 # -------------------------------------------------
-def extract_imdb_id(raw):
-    if not raw:
-        return None
-    m = re.search(r"(tt\d{7,9})", str(raw))
-    return m.group(1) if m else None
-
-
 def parse_length_to_minutes(raw):
-    """
-    Ondersteunt:
-    - '1 h 30 min'
-    - '2 h 5 min'
-    - '01:43:49'
-    - None / leeg
-    Retourneert: int minuten of None
-    """
     if raw is None:
         return None
 
@@ -88,20 +73,18 @@ def parse_length_to_minutes(raw):
     if not s:
         return None
 
-    # HH:MM:SS
     if re.match(r"^\d{1,2}:\d{2}:\d{2}$", s):
         h, m, _ = s.split(":")
         return int(h) * 60 + int(m)
 
-    # X h Y min
-    hours = re.search(r"(\d+)\s*h", s)
-    minutes = re.search(r"(\d+)\s*min", s)
+    h = re.search(r"(\d+)\s*h", s)
+    m = re.search(r"(\d+)\s*min", s)
 
     total = 0
-    if hours:
-        total += int(hours.group(1)) * 60
-    if minutes:
-        total += int(minutes.group(1))
+    if h:
+        total += int(h.group(1)) * 60
+    if m:
+        total += int(m.group(1))
 
     return total if total > 0 else None
 
@@ -119,9 +102,6 @@ def get_poster(imdb_id):
     except Exception:
         return None
 
-    if data.get("Response") == "False":
-        return None
-
     poster = data.get("Poster")
     if poster and poster != "N/A":
         return poster
@@ -136,13 +116,16 @@ query = st.text_input(
     placeholder="Typ titel en druk op Enter"
 )
 
-sort_choice = st.radio(
-    "Sorteer op",
-    ["Jaar (oud → nieuw)", "Naam (A → Z)"],
-    horizontal=True
+sort_field = st.segmented_control(
+    "Sorteren op",
+    options=["Jaar", "Naam"],
+    default="Jaar"
 )
 
-mobile_mode = st.checkbox("📱 Mobiele weergave", value=False)
+reverse_order = st.toggle(
+    "Omgekeerde volgorde",
+    value=False
+)
 
 # -------------------------------------------------
 # DATA
@@ -163,94 +146,63 @@ if results.empty:
 # -------------------------------------------------
 # SORTERING
 # -------------------------------------------------
-if sort_choice == "Naam (A → Z)":
+ascending = not reverse_order
+
+if sort_field == "Naam":
     results = results.sort_values(
-        by="FILM",
-        key=lambda s: s.str.lower(),
-        na_position="last"
+        by="FILM_LC",
+        ascending=ascending
     )
 else:
     results = results.sort_values(
-        by=["JAAR", "FILM"],
-        ascending=[True, True],
-        na_position="last"
+        by=["JAAR", "FILM_LC"],
+        ascending=[ascending, True]
     )
+
+# Extra: IMDb groepering bij elkaar houden
+results = results.sort_values(
+    by=["IMDB_ID", "JAAR"],
+    kind="stable"
+)
 
 st.caption(f"🎞️ {len(results)} films gevonden")
 
 # -------------------------------------------------
-# PAGING (mobile)
+# RENDER (met IMDb-groepen)
 # -------------------------------------------------
-if mobile_mode:
-    if "page" not in st.session_state:
-        st.session_state.page = 0
+current_imdb = None
 
-    page_size = 5
-    start = st.session_state.page * page_size
-    end = start + page_size
-    view = results.iloc[start:end]
-else:
-    view = results
+for _, row in results.iterrows():
 
-# -------------------------------------------------
-# RENDER
-# -------------------------------------------------
-for _, row in view.iterrows():
+    imdb_id = row["IMDB_ID"]
 
-    imdb_id = extract_imdb_id(row["IMDBLINK"])
+    # 🔗 NIEUWE GROEP
+    if imdb_id != current_imdb:
+        current_imdb = imdb_id
+        st.markdown("---")
+        if imdb_id:
+            st.markdown(f"### IMDb-groep: `{imdb_id}`")
+
     poster = get_poster(imdb_id)
 
-    imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else None
+    minutes = parse_length_to_minutes(row["LENGTE"])
+    length_text = f"⏱ {minutes} min" if minutes else "⏱ ? min"
 
-    title = row["FILM"]
-    year = row["JAAR"]
-    raw_length = row["LENGTE"]
     seen = row["BEKEKEN"]
-
-    minutes = parse_length_to_minutes(raw_length)
-
-    if minutes is None:
-        length_text = "⏱ ? min"
-    else:
-        length_text = f"⏱ {minutes} min"
-
-    if pd.isna(seen) or seen == "":
-        seen_text = "🔴 Nooit gezien"
-    else:
-        seen_text = f"🟢 Laatst gezien: {seen}"
+    seen_text = "🔴 Nooit gezien" if not seen else f"🟢 Laatst gezien: {seen}"
 
     col1, col2 = st.columns([1.2, 4])
 
     with col1:
         if poster:
-            st.image(poster, width=110)
+            st.image(poster, width=140)
         else:
             st.caption("🖼️ geen poster")
 
     with col2:
-        if imdb_url:
-            st.markdown(f"**[{title}]({imdb_url})** ({year})")
-        else:
-            st.markdown(f"**{title}** ({year})")
-
+        st.markdown(f"**{row['FILM']}** ({row['JAAR']})")
         st.markdown(f"{length_text}  \n{seen_text}")
 
-    st.divider()
-
 # -------------------------------------------------
-# MOBILE NAV
+# END
 # -------------------------------------------------
-if mobile_mode:
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.session_state.page > 0:
-            if st.button("⬅ Vorige"):
-                st.session_state.page -= 1
-                st.rerun()
-
-    with col2:
-        if end < len(results):
-            if st.button("➡ Volgende"):
-                st.session_state.page += 1
-                st.rerun()
