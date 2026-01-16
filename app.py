@@ -79,7 +79,7 @@ def load_moviemeter():
 def load_mfi():
     conn = sqlite3.connect(download_db(MFI_DB_URL, "mfi.db"))
     df = pd.read_sql_query(
-        "SELECT IMDBTT, MFI FROM tbl_MFI_DBase",
+        "SELECT IMDBTT, UNIQUEID, MFI FROM tbl_MFI_DBase",
         conn
     )
     conn.close()
@@ -105,6 +105,17 @@ def parse_mfi_tokens(mfi_text):
         codec = "AV1"
 
     return duration, resolution, codec, filename
+
+
+def parse_filesize_from_uniqueid(uniqueid):
+    if not uniqueid:
+        return "?"
+    try:
+        raw = uniqueid.split("*§*")[0]
+        size = int(raw)
+        return f"{size:,}".replace(",", ".")
+    except Exception:
+        return "?"
 
 
 @st.cache_data(ttl=3600)
@@ -186,8 +197,11 @@ for imdb_id, group in groups:
             st.markdown("**Bestanden**")
             for _, r in mfi_hits.iterrows():
                 duration, res, codec, fname = parse_mfi_tokens(r["MFI"])
+                size = parse_filesize_from_uniqueid(r["UNIQUEID"])
+
                 st.markdown(
-                    f"- **{fname}**  \n  ⏱ {duration} – {res} – {codec}"
+                    f"- **{fname}**  \n"
+                    f"  ⏱ {duration} – {res} – {codec} – {size}"
                 )
 
     st.divider()
