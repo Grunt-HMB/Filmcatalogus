@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import requests
-import re
 import os
 
 # -------------------------------------------------
@@ -12,56 +11,64 @@ st.set_page_config(page_title="Filmcatalogus", layout="centered")
 st.markdown("## 🎬 Filmcatalogus")
 
 # -------------------------------------------------
-# CONFIG – Dropbox raw URLs
+# CHIP CSS
 # -------------------------------------------------
-FILMS_DB_URL = (
-    "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
-    "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
-)
+st.markdown("""
+<style>
+.chip-container {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+}
+.chip {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    user-select: none;
+    background-color: #2b2b2b;
+    color: #ddd;
+    border: 1px solid #444;
+}
+.chip.active {
+    background-color: #ff4b4b;
+    color: white;
+    border-color: #ff4b4b;
+    font-weight: 600;
+}
+</style>
+""", unsafe_allow_html=True)
 
-MOVIEMETER_DB_URL = (
-    "https://www.dropbox.com/scl/fi/dlj5dsm3dhd5tfz1utu8w/"
-    "MovieMeter_DBase.db?rlkey=znjvfim8me6kzk6jbo6fqf8pl&raw=1"
-)
-
-MFI_DB_URL = (
-    "https://www.dropbox.com/scl/fi/w5em79ae4t6kca7dx6ead/"
-    "DBase-MFI.db?rlkey=ysfnez59g18zqhwavr7bj6tr4&raw=1"
-)
+# -------------------------------------------------
+# CONFIG
+# -------------------------------------------------
+FILMS_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?raw=1"
+MOVIEMETER_DB_URL = "https://www.dropbox.com/scl/fi/dlj5dsm3dhd5tfz1utu8w/MovieMeter_DBase.db?raw=1"
+MFI_DB_URL = "https://www.dropbox.com/scl/fi/w5em79ae4t6kca7dx6ead/DBase-MFI.db?raw=1"
 
 OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
 
 # -------------------------------------------------
-# Download helper
+# Helpers
 # -------------------------------------------------
 @st.cache_data(ttl=600)
-def download_db(url, local_name):
+def download_db(url, name):
     r = requests.get(url, timeout=20)
     r.raise_for_status()
-    with open(local_name, "wb") as f:
+    with open(name, "wb") as f:
         f.write(r.content)
-    return local_name
+    return name
 
-# -------------------------------------------------
-# Load databases
-# -------------------------------------------------
+
 @st.cache_data(ttl=600)
 def load_films():
     conn = sqlite3.connect(download_db(FILMS_DB_URL, "films.db"))
     df = pd.read_sql_query(
-        """
-        SELECT
-            FILM,
-            JAAR,
-            BEKEKEN,
-            IMDBLINK,
-            FILMRATING
-        FROM tbl_DBase_Films
-        """,
+        "SELECT FILM, JAAR, BEKEKEN, IMDBLINK, FILMRATING FROM tbl_DBase_Films",
         conn
     )
     conn.close()
-
     df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["RATING_UC"] = df["FILMRATING"].fillna("").str.upper()
@@ -70,11 +77,8 @@ def load_films():
 
 @st.cache_data(ttl=600)
 def load_moviemeter():
-    conn = sqlite3.connect(download_db(MOVIEMETER_DB_URL, "moviemeter.db"))
-    df = pd.read_sql_query(
-        "SELECT IMDBTT, MOVIEMETER FROM tbl_MovieMeter",
-        conn
-    )
+    conn = sqlite3.connect(download_db(MOVIEMETER_DB_URL, "mm.db"))
+    df = pd.read_sql_query("SELECT IMDBTT, MOVIEMETER FROM tbl_MovieMeter", conn)
     conn.close()
     return df
 
@@ -82,84 +86,60 @@ def load_moviemeter():
 @st.cache_data(ttl=600)
 def load_mfi():
     conn = sqlite3.connect(download_db(MFI_DB_URL, "mfi.db"))
-    df = pd.read_sql_query(
-        "SELECT IMDBTT, UNIQUEID, MFI FROM tbl_MFI_DBase",
-        conn
-    )
+    df = pd.read_sql_query("SELECT IMDBTT, UNIQUEID, MFI FROM tbl_MFI_DBase", conn)
     conn.close()
     return df
 
-# -------------------------------------------------
-# Helpers – MFI parsing
-# -------------------------------------------------
-def parse_filesize_from_uniqueid(uniqueid):
+
+def filesize_from_uniqueid(uid):
     try:
-        raw = uniqueid.split("*§*")[0]
-        return f"{int(raw):,}".replace(",", ".")
-    except Exception:
+        return f"{int(uid.split('*§*')[0]):,}".replace(",", ".")
+    except:
         return "?"
 
 
-def extract_video_codec_from_tokens(tokens):
-    for t in tokens:
-        t_up = t.upper()
-        if "HEVC" in t_up or "H265" in t_up:
-            if "MAIN 10" in t_up or "MAIN10" in t_up:
-                return "HEVC Main 10"
-            return "HEVC"
-        if "AVC" in t_up or "H264" in t_up:
-            return "AVC"
-        if "AV1" in t_up:
-            return "AV1"
-    return "?"
-
-
-def parse_mfi_tokens(mfi_text):
-    tokens = [t.strip() for t in mfi_text.split("§")]
-    duration = tokens[0] if len(tokens) > 0 else "?"
-    resolution = tokens[3] if len(tokens) > 3 else "?"
-    filename = os.path.basename(tokens[-1]) if tokens else "?"
-    codec = extract_video_codec_from_tokens(tokens)
+def parse_mfi(mfi):
+    t = [x.strip() for x in mfi.split("§")]
+    duration = t[0] if len(t) > 0 else "?"
+    resolution = t[3] if len(t) > 3 else "?"
+    filename = os.path.basename(t[-1])
+    codec = "?"
+    for x in t:
+        u = x.upper()
+        if "HEVC" in u or "H265" in u:
+            codec = "HEVC Main 10" if "MAIN 10" in u else "HEVC"
+            break
+        if "AVC" in u or "H264" in u:
+            codec = "AVC"
+            break
     return duration, resolution, codec, filename
 
 
 @st.cache_data(ttl=3600)
-def get_poster_and_imdb(imdb_id):
-    if not imdb_id or not OMDB_KEY:
+def poster_and_imdb(imdb):
+    if not imdb or not OMDB_KEY:
         return None, None
-
-    r = requests.get(
-        "https://www.omdbapi.com/",
-        params={"i": imdb_id, "apikey": OMDB_KEY},
-        timeout=10
-    )
-    try:
-        data = r.json()
-    except Exception:
-        return None, None
-
-    poster = data.get("Poster")
-    if poster == "N/A":
-        poster = None
-
-    imdb_url = f"https://www.imdb.com/title/{imdb_id}/"
-    return poster, imdb_url
+    r = requests.get("https://www.omdbapi.com/", params={"i": imdb, "apikey": OMDB_KEY})
+    d = r.json()
+    p = d.get("Poster")
+    if p == "N/A":
+        p = None
+    return p, f"https://www.imdb.com/title/{imdb}/"
 
 # -------------------------------------------------
-# Load all data
+# LOAD DATA
 # -------------------------------------------------
-films_df = load_films()
-moviemeter_df = load_moviemeter()
-mfi_df = load_mfi()
+films = load_films()
+moviemeter = load_moviemeter()
+mfi = load_mfi()
 
 # -------------------------------------------------
-# FILTERS
+# FILTER STATE
 # -------------------------------------------------
-st.markdown("### 🔎 Filters")
+if "active_rating" not in st.session_state:
+    st.session_state.active_rating = "Alles"
 
-only_unseen = st.checkbox("Toon enkel niet bekeken films", value=False)
-
-rating_ui_to_db = {
+rating_map = {
     "Alles": None,
     "⭐⭐⭐⭐": ["TPR"],
     "⭐⭐⭐": ["AFM", "A-FILM"],
@@ -168,77 +148,81 @@ rating_ui_to_db = {
     "Classic": ["CLS"]
 }
 
-selected_rating = st.radio(
-    "Beoordeling",
-    list(rating_ui_to_db.keys()),
-    horizontal=True
-)
+# -------------------------------------------------
+# FILTER UI
+# -------------------------------------------------
+st.markdown("### Beoordeling")
+
+cols = st.columns(len(rating_map))
+for col, label in zip(cols, rating_map.keys()):
+    with col:
+        if st.button(label, key=f"chip_{label}"):
+            st.session_state.active_rating = label
+
+chip_html = '<div class="chip-container">'
+for label in rating_map:
+    active = "active" if st.session_state.active_rating == label else ""
+    chip_html += f'<div class="chip {active}">{label}</div>'
+chip_html += "</div>"
+st.markdown(chip_html, unsafe_allow_html=True)
+
+only_unseen = st.checkbox("Toon enkel niet bekeken films")
+
+query = st.text_input("🔍 Zoek film (optioneel)")
 
 # -------------------------------------------------
-# SEARCH
+# APPLY FILTERS
 # -------------------------------------------------
-query = st.text_input("🔍 Zoek film", placeholder="Typ titel en druk op Enter")
-if not query:
-    st.stop()
+results = films.copy()
 
-results = films_df[films_df["FILM_LC"].str.contains(query.lower(), na=False)]
+# ⭐ rating filter (altijd toepasbaar)
+if st.session_state.active_rating != "Alles":
+    allowed = rating_map[st.session_state.active_rating]
+    results = results[results["RATING_UC"].isin(allowed)]
 
+# 👁️ niet bekeken
 if only_unseen:
     results = results[
         results["BEKEKEN"].isna()
         | (results["BEKEKEN"].astype(str).str.strip() == "")
     ]
 
-if selected_rating != "Alles":
-    allowed = rating_ui_to_db[selected_rating]
-    results = results[results["RATING_UC"].isin(allowed)]
+# 🔍 zoek (optioneel!)
+if query:
+    results = results[results["FILM_LC"].str.contains(query.lower(), na=False)]
 
 if results.empty:
     st.warning("Geen films gevonden met deze filters")
     st.stop()
 
-groups = results.groupby("IMDB_ID", sort=False)
-
 # -------------------------------------------------
 # RENDER
 # -------------------------------------------------
-for imdb_id, group in groups:
+for imdb, group in results.groupby("IMDB_ID", sort=False):
 
     title = group.iloc[0]["FILM"]
     year = group.iloc[0]["JAAR"]
 
-    poster, imdb_url = get_poster_and_imdb(imdb_id)
+    poster, imdb_url = poster_and_imdb(imdb)
 
-    col_poster, col_main = st.columns([1.1, 4])
-
-    with col_poster:
+    c1, c2 = st.columns([1.1, 4])
+    with c1:
         if poster:
             st.markdown(
-                f'<a href="{imdb_url}" target="_blank">'
-                f'<img src="{poster}" width="150"></a>',
+                f'<a href="{imdb_url}" target="_blank"><img src="{poster}" width="150"></a>',
                 unsafe_allow_html=True
             )
-        else:
-            st.caption("🖼️ geen cover")
-
-    with col_main:
+    with c2:
         st.markdown(f"### {title} ({year})")
 
-        mm_row = moviemeter_df[moviemeter_df["IMDBTT"] == imdb_id]
-        if not mm_row.empty:
-            plot = mm_row.iloc[0]["MOVIEMETER"].split("*§*")[0]
-            st.markdown(f"_{plot}_")
+        mm = moviemeter[moviemeter["IMDBTT"] == imdb]
+        if not mm.empty:
+            st.markdown(f"_{mm.iloc[0]['MOVIEMETER'].split('*§*')[0]}_")
 
-        mfi_hits = mfi_df[mfi_df["IMDBTT"] == imdb_id]
-        if not mfi_hits.empty:
-            st.markdown("**Bestanden**")
-            for _, r in mfi_hits.iterrows():
-                duration, res, codec, fname = parse_mfi_tokens(r["MFI"])
-                size = parse_filesize_from_uniqueid(r["UNIQUEID"])
-
-                st.markdown(
-                    f"- **{fname}**  \n"
-                    f"  ⏱ {duration} – {res} – {codec} – {size}"
-                )
+        mf = mfi[mfi["IMDBTT"] == imdb]
+        for _, r in mf.iterrows():
+            dur, res, codec, fn = parse_mfi(r["MFI"])
+            size = filesize_from_uniqueid(r["UNIQUEID"])
+            st.markdown(f"- **{fn}**  \n  ⏱ {dur} – {res} – {codec} – {size}")
 
     st.divider()
