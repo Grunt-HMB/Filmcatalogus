@@ -65,7 +65,6 @@ def load_films():
     df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["RATING_UC"] = df["FILMRATING"].fillna("").str.upper()
-
     return df
 
 
@@ -154,13 +153,14 @@ moviemeter_df = load_moviemeter()
 mfi_df = load_mfi()
 
 # -------------------------------------------------
-# FILTERS (STARS / CLASSIC)
+# FILTERS
 # -------------------------------------------------
 st.markdown("### 🔎 Filters")
 
 only_unseen = st.checkbox("Toon enkel niet bekeken films", value=False)
 
 rating_ui_to_db = {
+    "Alles": None,
     "⭐⭐⭐⭐": ["TPR"],
     "⭐⭐⭐": ["AFM", "A-FILM"],
     "⭐⭐": ["BFM", "B-FILM"],
@@ -168,15 +168,11 @@ rating_ui_to_db = {
     "Classic": ["CLS"]
 }
 
-selected_ui_ratings = st.multiselect(
+selected_rating = st.radio(
     "Beoordeling",
     list(rating_ui_to_db.keys()),
-    default=list(rating_ui_to_db.keys())
+    horizontal=True
 )
-
-allowed_ratings = []
-for ui in selected_ui_ratings:
-    allowed_ratings.extend(rating_ui_to_db[ui])
 
 # -------------------------------------------------
 # SEARCH
@@ -193,7 +189,9 @@ if only_unseen:
         | (results["BEKEKEN"].astype(str).str.strip() == "")
     ]
 
-results = results[results["RATING_UC"].isin(allowed_ratings)]
+if selected_rating != "Alles":
+    allowed = rating_ui_to_db[selected_rating]
+    results = results[results["RATING_UC"].isin(allowed)]
 
 if results.empty:
     st.warning("Geen films gevonden met deze filters")
