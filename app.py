@@ -8,6 +8,8 @@ st.set_page_config(page_title="Filmcatalogus", layout="centered")
 
 DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 OMDB_KEY = st.secrets["OMDB_KEY"]
+st.write("DEBUG OMDB_KEY:", OMDB_KEY[:4] + "..." if OMDB_KEY else "LEEG")
+
 
 # ---------------- Download DB ----------------
 @st.cache_data(ttl=600)
