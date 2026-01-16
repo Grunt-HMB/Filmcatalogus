@@ -34,10 +34,10 @@ else:
 # -------------------------------------------------
 # DEBUG (mag later weg)
 # -------------------------------------------------
-with st.expander("🛠 Debug"):
-    st.write("OMDB_KEY aanwezig:", bool(OMDB_KEY))
-    if OMDB_KEY:
-        st.write("OMDB_KEY start met:", OMDB_KEY[:4] + "...")
+#with st.expander("🛠 Debug"):
+#    st.write("OMDB_KEY aanwezig:", bool(OMDB_KEY))
+#    if OMDB_KEY:
+#        st.write("OMDB_KEY start met:", OMDB_KEY[:4] + "...")
 
 # -------------------------------------------------
 # Download DB
