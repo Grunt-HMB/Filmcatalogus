@@ -3,15 +3,45 @@ import pandas as pd
 import sqlite3
 import requests
 import re
+import os
 
-st.set_page_config(page_title="Filmcatalogus", layout="centered")
+# -------------------------------------------------
+# Page config
+# -------------------------------------------------
+st.set_page_config(
+    page_title="Filmcatalogus",
+    layout="centered"
+)
 
-DROPBOX_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
-OMDB_KEY = st.secrets["OMDB_KEY"]
-st.write("DEBUG OMDB_KEY:", OMDB_KEY[:4] + "..." if OMDB_KEY else "LEEG")
+st.markdown("## 🎬 Filmcatalogus")
+st.caption("Chronologisch gesorteerd (oud → nieuw)")
 
+# -------------------------------------------------
+# CONFIG
+# -------------------------------------------------
+DROPBOX_DB_URL = (
+    "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
+    "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
+)
 
-# ---------------- Download DB ----------------
+# OMDb key: eerst secrets, fallback naar env var
+OMDB_KEY = None
+if "OMDB_KEY" in st.secrets:
+    OMDB_KEY = st.secrets["OMDB_KEY"]
+else:
+    OMDB_KEY = os.getenv("OMDB_KEY")
+
+# -------------------------------------------------
+# DEBUG (mag later weg)
+# -------------------------------------------------
+with st.expander("🛠 Debug"):
+    st.write("OMDB_KEY aanwezig:", bool(OMDB_KEY))
+    if OMDB_KEY:
+        st.write("OMDB_KEY start met:", OMDB_KEY[:4] + "...")
+
+# -------------------------------------------------
+# Download DB
+# -------------------------------------------------
 @st.cache_data(ttl=600)
 def download_db():
     r = requests.get(DROPBOX_DB_URL, timeout=20)
@@ -20,11 +50,13 @@ def download_db():
         f.write(r.content)
     return "films.db"
 
-# ---------------- Load data ----------------
+# -------------------------------------------------
+# Load data
+# -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_data():
-    db = download_db()
-    conn = sqlite3.connect(db)
+    db_path = download_db()
+    conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
         "SELECT FILM, JAAR, BEKEKEN, IMDBLINK FROM tbl_DBase_Films",
         conn
@@ -32,18 +64,20 @@ def load_data():
     conn.close()
     return df
 
-# ---------------- IMDb ID helper ----------------
+# -------------------------------------------------
+# Helpers
+# -------------------------------------------------
 def extract_imdb_id(raw):
     if not raw:
         return None
-    m = re.search(r"(tt\d+)", str(raw))
+    m = re.search(r"(tt\d{7,9})", str(raw))
     return m.group(1) if m else None
 
-# ---------------- OMDb (DEBUG) ----------------
+
 @st.cache_data(ttl=300)
-def get_poster_debug(imdb_id):
-    if not imdb_id:
-        return None, "geen imdb_id"
+def get_poster(imdb_id):
+    if not imdb_id or not OMDB_KEY:
+        return None, "geen imdb_id of geen OMDB_KEY"
 
     url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
     r = requests.get(url, timeout=10)
@@ -51,7 +85,7 @@ def get_poster_debug(imdb_id):
     try:
         data = r.json()
     except Exception:
-        return None, f"JSON fout: {r.text}"
+        return None, "JSON parse fout"
 
     if data.get("Response") == "False":
         return None, f"OMDb error: {data.get('Error')}"
@@ -60,44 +94,43 @@ def get_poster_debug(imdb_id):
     if poster and poster != "N/A":
         return poster, None
 
-    return None, "Poster = N/A (geen poster via OMDb)"
+    return None, "Poster = N/A"
 
-# ---------------- UI ----------------
-st.markdown("## 🎬 Filmcatalogus")
-
+# -------------------------------------------------
+# UI CONTROLS
+# -------------------------------------------------
 mobile_mode = st.checkbox("📱 Mobiele weergave", value=False)
-
-sort_mode = st.radio(
-    "Sorteer op",
-    ["Titel", "Jaar (nieuw → oud)", "Jaar (oud → nieuw)"],
-    horizontal=True
-)
-
 query = st.text_input("🔍 Zoek film")
 
+# -------------------------------------------------
+# DATA
+# -------------------------------------------------
 df = load_data()
 
-if query:
-    results = df[df["FILM"].str.contains(query, case=False, na=False)]
-else:
-    results = pd.DataFrame()
-
-if results.empty:
-    if query:
-        st.info("Geen films gevonden")
+if not query:
+    st.info("Begin te typen om te zoeken")
     st.stop()
 
-# ---------------- Sorting ----------------
-if sort_mode == "Titel":
-    results = results.sort_values("FILM", key=lambda s: s.str.lower())
-elif sort_mode == "Jaar (nieuw → oud)":
-    results = results.sort_values("JAAR", ascending=False)
-else:
-    results = results.sort_values("JAAR", ascending=True)
+results = df[df["FILM"].str.contains(query, case=False, na=False)]
+
+if results.empty:
+    st.warning("Geen films gevonden")
+    st.stop()
+
+# -------------------------------------------------
+# SORT (ALTIJD OUD → NIEUW)
+# -------------------------------------------------
+results = results.sort_values(
+    by=["JAAR", "FILM"],
+    ascending=[True, True],
+    na_position="last"
+)
 
 st.caption(f"🎞️ {len(results)} films gevonden")
 
-# ---------------- Paging (mobile only) ----------------
+# -------------------------------------------------
+# PAGING (mobile only)
+# -------------------------------------------------
 if mobile_mode:
     if "page" not in st.session_state:
         st.session_state.page = 0
@@ -109,11 +142,13 @@ if mobile_mode:
 else:
     view = results
 
-# ---------------- Render ----------------
+# -------------------------------------------------
+# RENDER
+# -------------------------------------------------
 for _, row in view.iterrows():
 
     imdb_id = extract_imdb_id(row["IMDBLINK"])
-    poster, poster_info = get_poster_debug(imdb_id)
+    poster, poster_info = get_poster(imdb_id)
 
     imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else None
 
@@ -142,20 +177,23 @@ for _, row in view.iterrows():
 
         st.markdown(seen_text)
 
-        # 🔎 DEBUG INFO
         if poster_info:
             st.caption(f"ℹ️ {poster_info}")
 
     st.divider()
 
-# ---------------- Mobile navigation ----------------
+# -------------------------------------------------
+# MOBILE NAV
+# -------------------------------------------------
 if mobile_mode:
     col1, col2 = st.columns(2)
+
     with col1:
         if st.session_state.page > 0:
             if st.button("⬅ Vorige"):
                 st.session_state.page -= 1
                 st.rerun()
+
     with col2:
         if end < len(results):
             if st.button("➡ Volgende"):
