@@ -62,7 +62,6 @@ def load_films():
         conn
     )
     conn.close()
-
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
     return df
@@ -90,39 +89,8 @@ def load_mfi():
     return df
 
 # -------------------------------------------------
-# Parsing helpers
+# Helpers
 # -------------------------------------------------
-def parse_length_to_minutes(raw):
-    if not raw:
-        return None
-    s = str(raw).lower().strip()
-
-    if re.match(r"^\d{1,2}:\d{2}:\d{2}$", s):
-        h, m, _ = s.split(":")
-        return int(h) * 60 + int(m)
-
-    h = re.search(r"(\d+)\s*h", s)
-    m = re.search(r"(\d+)\s*min", s)
-
-    total = 0
-    if h:
-        total += int(h.group(1)) * 60
-    if m:
-        total += int(m.group(1))
-    return total if total else None
-
-
-def rating_to_stars(raw):
-    if not raw:
-        return ""
-    return {
-        "TPR": "⭐⭐⭐⭐",
-        "AFM": "⭐⭐⭐", "A-FILM": "⭐⭐⭐",
-        "BFM": "⭐⭐", "B-FILM": "⭐⭐",
-        "CFM": "⭐", "C-FILM": "⭐"
-    }.get(raw.upper(), "")
-
-
 def extract_resolution(text):
     m = re.search(r"(\d{3,4})\s*x\s*(\d{3,4})", text)
     return f"{m.group(1)}x{m.group(2)}" if m else "?"
@@ -140,40 +108,32 @@ def extract_video_codec(text):
     return c
 
 
-def extract_audio(text):
-    m = re.search(r"\b(AAC|AC-3|DTS|TRUEHD|EAC-3)\b", text, re.I)
-    codec = m.group(1).upper() if m else "?"
-    ch = re.search(r"Channels\s*(\d+)", text, re.I)
-    channels = ch.group(1) if ch else "?"
-    return f"{codec} ({channels} ch)"
-
-
 def extract_filename(text):
-    return text.rsplit("§", 1)[-1]
+    return os.path.basename(text.rsplit("§", 1)[-1])
+
+
+@st.cache_data(ttl=3600)
+def get_poster_omdb(imdb_id):
+    if not imdb_id or not OMDB_KEY:
+        return None
+    r = requests.get(
+        "https://www.omdbapi.com/",
+        params={"i": imdb_id, "apikey": OMDB_KEY},
+        timeout=10
+    )
+    try:
+        data = r.json()
+    except Exception:
+        return None
+    poster = data.get("Poster")
+    return poster if poster and poster != "N/A" else None
 
 # -------------------------------------------------
-# Load all data
+# Load data
 # -------------------------------------------------
 films_df = load_films()
 moviemeter_df = load_moviemeter()
 mfi_df = load_mfi()
-
-# -------------------------------------------------
-# SORT STATE
-# -------------------------------------------------
-if "sort_field" not in st.session_state:
-    st.session_state.sort_field = "JAAR"
-    st.session_state.sort_asc = True
-
-c1, c2 = st.columns(2)
-with c1:
-    if st.button("Naam"):
-        st.session_state.sort_field = "FILM"
-        st.session_state.sort_asc = not st.session_state.sort_asc
-with c2:
-    if st.button("Jaar"):
-        st.session_state.sort_field = "JAAR"
-        st.session_state.sort_asc = not st.session_state.sort_asc
 
 # -------------------------------------------------
 # SEARCH
@@ -187,17 +147,6 @@ if results.empty:
     st.warning("Geen films gevonden")
     st.stop()
 
-# -------------------------------------------------
-# SORT
-# -------------------------------------------------
-if st.session_state.sort_field == "FILM":
-    results = results.sort_values("FILM_LC", ascending=st.session_state.sort_asc)
-else:
-    results = results.sort_values(
-        ["JAAR", "FILM_LC"],
-        ascending=[st.session_state.sort_asc, True]
-    )
-
 groups = results.groupby("IMDB_ID", sort=False)
 
 # -------------------------------------------------
@@ -205,42 +154,36 @@ groups = results.groupby("IMDB_ID", sort=False)
 # -------------------------------------------------
 for imdb_id, group in groups:
 
-    st.markdown(f"### IMDb: `{imdb_id}`")
+    title = group.iloc[0]["FILM"]
+    year = group.iloc[0]["JAAR"]
 
-    # -------- MovieMeter plot --------
-    mm_row = moviemeter_df[moviemeter_df["IMDBTT"] == imdb_id]
-    if not mm_row.empty:
-        plot = mm_row.iloc[0]["MOVIEMETER"].split("*§*")[0]
-        st.markdown(f"_{plot}_")
+    poster = get_poster_omdb(imdb_id)
 
-    # -------- Filmversies --------
-    cols = st.columns(len(group))
-    for col, (_, row) in zip(cols, group.iterrows()):
-        minutes = parse_length_to_minutes(row["LENGTE"])
-        stars = rating_to_stars(row["FILMRATING"])
-        seen = row["BEKEKEN"]
-        seen_txt = "🔴 Nooit" if not seen else f"🟢 {seen}"
+    col_poster, col_main = st.columns([1.1, 4])
 
-        col.markdown(
-            f"**{row['FILM']}** ({row['JAAR']})  \n"
-            f"⏱ {minutes if minutes else '?'} min  \n"
-            f"{stars}  \n"
-            f"{seen_txt}"
-        )
+    with col_poster:
+        if poster:
+            st.image(poster, width=150)
+        else:
+            st.caption("🖼️ geen cover")
 
-    # -------- MFI bestanden --------
-    mfi_hits = mfi_df[mfi_df["IMDBTT"] == imdb_id]
-    if not mfi_hits.empty:
-        st.markdown("##### 📀 Bestanden")
-        for _, r in mfi_hits.iterrows():
-            txt = r["MFI"]
-            st.markdown(
-                f"""
-- **{extract_filename(txt)}**  
-  📐 `{extract_resolution(txt)}`  
-  🎞 `{extract_video_codec(txt)}`  
-  🔊 `{extract_audio(txt)}`
-"""
-            )
+    with col_main:
+        st.markdown(f"### {title} ({year})")
+
+        mm_row = moviemeter_df[moviemeter_df["IMDBTT"] == imdb_id]
+        if not mm_row.empty:
+            plot = mm_row.iloc[0]["MOVIEMETER"].split("*§*")[0]
+            st.markdown(f"_{plot}_")
+
+        mfi_hits = mfi_df[mfi_df["IMDBTT"] == imdb_id]
+        if not mfi_hits.empty:
+            st.markdown("**Bestanden**")
+            for _, r in mfi_hits.iterrows():
+                txt = r["MFI"]
+                filename = extract_filename(txt)
+                res = extract_resolution(txt)
+                codec = extract_video_codec(txt)
+
+                st.markdown(f"- **{filename}**  \n  {res} – {codec}")
 
     st.divider()
