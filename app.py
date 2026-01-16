@@ -175,23 +175,30 @@ selected_rating = st.radio(
 )
 
 # -------------------------------------------------
-# SEARCH
+# SEARCH (OPTIONEEL)
 # -------------------------------------------------
-query = st.text_input("🔍 Zoek film", placeholder="Typ titel en druk op Enter")
-if not query:
-    st.stop()
+query = st.text_input("🔍 Zoek film (optioneel)")
 
-results = films_df[films_df["FILM_LC"].str.contains(query.lower(), na=False)]
+# -------------------------------------------------
+# APPLY FILTERS
+# -------------------------------------------------
+results = films_df.copy()
 
+# ⭐ rating filter (altijd)
+if selected_rating != "Alles":
+    allowed = rating_ui_to_db[selected_rating]
+    results = results[results["RATING_UC"].isin(allowed)]
+
+# 👁️ niet bekeken
 if only_unseen:
     results = results[
         results["BEKEKEN"].isna()
         | (results["BEKEKEN"].astype(str).str.strip() == "")
     ]
 
-if selected_rating != "Alles":
-    allowed = rating_ui_to_db[selected_rating]
-    results = results[results["RATING_UC"].isin(allowed)]
+# 🔍 zoek alleen als er tekst is
+if query:
+    results = results[results["FILM_LC"].str.contains(query.lower(), na=False)]
 
 if results.empty:
     st.warning("Geen films gevonden met deze filters")
