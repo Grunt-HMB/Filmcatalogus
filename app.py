@@ -117,9 +117,9 @@ if "sort_field" not in st.session_state:
     st.session_state.sort_field = "JAAR"
     st.session_state.sort_asc = True
 
-col1, col2 = st.columns(2)
+colA, colB = st.columns(2)
 
-with col1:
+with colA:
     if st.button("Naam"):
         if st.session_state.sort_field == "FILM":
             st.session_state.sort_asc = not st.session_state.sort_asc
@@ -127,7 +127,7 @@ with col1:
             st.session_state.sort_field = "FILM"
             st.session_state.sort_asc = True
 
-with col2:
+with colB:
     if st.button("Jaar"):
         if st.session_state.sort_field == "JAAR":
             st.session_state.sort_asc = not st.session_state.sort_asc
@@ -152,7 +152,7 @@ if results.empty:
     st.stop()
 
 # -------------------------------------------------
-# SORT (ENKEL HIER SORTEREN!)
+# SORT (ENKEL HIER SORTEREN)
 # -------------------------------------------------
 if st.session_state.sort_field == "FILM":
     results = results.sort_values(
@@ -166,7 +166,7 @@ else:
     )
 
 # -------------------------------------------------
-# GROUP BY IMDb (NIET SORTEREN!)
+# GROUP BY IMDb (NIET SORTEREN)
 # -------------------------------------------------
 groups = results.groupby("IMDB_ID", sort=False)
 
@@ -177,7 +177,7 @@ for imdb_id, group in groups:
 
     poster = get_poster(imdb_id)
 
-    col_poster, col_films = st.columns([1.2, 4])
+    col_poster, col_versions = st.columns([1.2, 4])
 
     with col_poster:
         if poster:
@@ -185,22 +185,27 @@ for imdb_id, group in groups:
         else:
             st.caption("🖼️ geen poster")
 
-    with col_films:
+    with col_versions:
         cols = st.columns(len(group))
 
         for col, (_, row) in zip(cols, group.iterrows()):
             minutes = parse_length_to_minutes(row["LENGTE"])
             length_txt = f"{minutes} min" if minutes else "?"
+
             stars = rating_to_stars(row["FILMRATING"])
 
             seen = row["BEKEKEN"]
-            seen_txt = "🔴" if not seen else "🟢"
+            if not seen or str(seen).strip() == "":
+                seen_txt = "🔴 Nooit"
+            else:
+                seen_txt = f"🟢 {seen}"
 
             col.markdown(
                 f"**{row['FILM']}**  \n"
                 f"{row['JAAR']}  \n"
                 f"⏱ {length_txt}  \n"
-                f"{stars} {seen_txt}"
+                f"{stars}  \n"
+                f"{seen_txt}"
             )
 
     st.divider()
