@@ -224,13 +224,18 @@ for imdb_id, group in results.groupby("IMDB_ID", sort=False):
 
     col_poster, col_main = st.columns([1.1, 4])
 
-    with col_poster:
+   with col_poster:
         if poster:
             st.markdown(
                 f'<a href="{imdb_url}" target="_blank">'
-                f'<img src="{poster}" width="150"></a>',
+                f'<img src="{poster}" width="120"></a>',
                 unsafe_allow_html=True
             )
+    else:
+        st.image(
+            "https://via.placeholder.com/150x220?text=No+Poster",
+            width=120
+        )
 
     with col_main:
         st.markdown(f"### {row['FILM']} ({row['JAAR']})")
