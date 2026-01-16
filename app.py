@@ -11,11 +11,11 @@ st.set_page_config(page_title="Filmcatalogus", layout="centered")
 st.markdown("## 🎬 Filmcatalogus")
 
 # -------------------------------------------------
-# CHIP CSS
+# CSS – chips
 # -------------------------------------------------
 st.markdown("""
 <style>
-.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin: 6px 0 12px 0; }
+.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin: 8px 0 12px 0; }
 .chip {
     padding: 6px 12px;
     border-radius: 999px;
@@ -35,27 +35,36 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# CONFIG – Dropbox raw URLs
+# CONFIG – Dropbox (MOET dl=1 zijn)
 # -------------------------------------------------
-FILMS_DB_URL = "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/DBase-Films.db?raw=1"
-MOVIEMETER_DB_URL = "https://www.dropbox.com/scl/fi/dlj5dsm3dhd5tfz1utu8w/MovieMeter_DBase.db?raw=1"
-MFI_DB_URL = "https://www.dropbox.com/scl/fi/w5em79ae4t6kca7dx6ead/DBase-MFI.db?raw=1"
+FILMS_DB_URL = (
+    "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
+    "DBase-Films.db?dl=1"
+)
 
-OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
+MOVIEMETER_DB_URL = (
+    "https://www.dropbox.com/scl/fi/dlj5dsm3dhd5tfz1utu8w/"
+    "MovieMeter_DBase.db?dl=1"
+)
+
+MFI_DB_URL = (
+    "https://www.dropbox.com/scl/fi/w5em79ae4t6kca7dx6ead/"
+    "DBase-MFI.db?dl=1"
+)
 
 # -------------------------------------------------
 # Download helper
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def download_db(url, name):
-    r = requests.get(url, timeout=20)
+    r = requests.get(url, timeout=30)
     r.raise_for_status()
     with open(name, "wb") as f:
         f.write(r.content)
     return name
 
 # -------------------------------------------------
-# LOAD FILMS (CRASH-PROOF)
+# Load FILMS (schema-proof)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_films():
@@ -91,22 +100,25 @@ def load_films():
     df["BEKEKEN_STD"] = df[bekeken_col] if bekeken_col else ""
     df["RATING_STD"] = df[rating_col] if rating_col else ""
 
-    df["IMDB_ID"] = df["IMDBLINK_STD"].str.extract(r"(tt\\d{7,9})")
+    df["IMDB_ID"] = df["IMDBLINK_STD"].str.extract(r"(tt\d{7,9})")
     df["FILM_LC"] = df["FILM_STD"].fillna("").str.lower()
     df["RATING_UC"] = df["RATING_STD"].fillna("").str.upper()
 
     return df
 
 # -------------------------------------------------
-# LOAD OTHER DBS
+# Load MovieMeter
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_moviemeter():
-    conn = sqlite3.connect(download_db(MOVIEMETER_DB_URL, "mm.db"))
+    conn = sqlite3.connect(download_db(MOVIEMETER_DB_URL, "moviemeter.db"))
     df = pd.read_sql("SELECT IMDBTT, MOVIEMETER FROM tbl_MovieMeter", conn)
     conn.close()
     return df
 
+# -------------------------------------------------
+# Load MFI
+# -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_mfi():
     conn = sqlite3.connect(download_db(MFI_DB_URL, "mfi.db"))
@@ -115,7 +127,7 @@ def load_mfi():
     return df
 
 # -------------------------------------------------
-# HELPERS
+# Helpers
 # -------------------------------------------------
 def filesize_from_uniqueid(uid):
     try:
@@ -140,14 +152,14 @@ def parse_mfi(mfi):
     return duration, resolution, codec, filename
 
 # -------------------------------------------------
-# LOAD DATA
+# Load data
 # -------------------------------------------------
 films = load_films()
 moviemeter = load_moviemeter()
 mfi = load_mfi()
 
 # -------------------------------------------------
-# RATING MODEL (ZONDER ⭐⭐⭐+)
+# Ratings (definitief)
 # -------------------------------------------------
 RATINGS = {
     "stars4": {"label":"⭐⭐⭐⭐","db":["TPR"],"class":"green"},
@@ -159,7 +171,7 @@ RATINGS = {
 }
 
 # -------------------------------------------------
-# BADGES
+# Badge counts (volledige DB)
 # -------------------------------------------------
 badge_counts = {
     k: films[films["RATING_UC"].isin(v["db"])]["IMDB_ID"].nunique()
@@ -167,18 +179,18 @@ badge_counts = {
 }
 
 # -------------------------------------------------
-# URL STATE
+# URL state
 # -------------------------------------------------
 active_rating = st.query_params.get("rating")
 if active_rating not in RATINGS:
     active_rating = None
 
 # -------------------------------------------------
-# UI – CHIPS
+# UI – chips
 # -------------------------------------------------
 st.markdown("### ⭐ Beoordeling")
 
-cols = st.columns(len(RATINGS)+1)
+cols = st.columns(len(RATINGS) + 1)
 with cols[0]:
     if st.button("Alles"):
         st.query_params.clear()
@@ -206,7 +218,7 @@ if not active_rating and not query:
     st.stop()
 
 # -------------------------------------------------
-# FILTER
+# Filter
 # -------------------------------------------------
 results = films.copy()
 
@@ -223,7 +235,7 @@ if results.empty:
 st.caption(f"{results['IMDB_ID'].nunique()} films gevonden")
 
 # -------------------------------------------------
-# RENDER
+# Render
 # -------------------------------------------------
 for imdb_id, g in results.groupby("IMDB_ID", sort=False):
     r = g.iloc[0]
