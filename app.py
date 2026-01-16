@@ -23,16 +23,8 @@ DROPBOX_DB_URL = (
     "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 )
 
-# OMDb key: eerst Streamlit secrets, fallback env var
+# OMDb key
 OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
-
-# -------------------------------------------------
-# DEBUG (mag later weg)
-# -------------------------------------------------
-with st.expander("🛠 Debug"):
-    st.write("OMDB_KEY aanwezig:", bool(OMDB_KEY))
-    if OMDB_KEY:
-        st.write("OMDB_KEY start met:", OMDB_KEY[:4] + "...")
 
 # -------------------------------------------------
 # Download DB
@@ -53,7 +45,15 @@ def load_data():
     db_path = download_db()
     conn = sqlite3.connect(db_path)
     df = pd.read_sql_query(
-        "SELECT FILM, JAAR, BEKEKEN, IMDBLINK FROM tbl_DBase_Films",
+        """
+        SELECT
+            FILM,
+            JAAR,
+            LENGTE,
+            BEKEKEN,
+            IMDBLINK
+        FROM tbl_DBase_Films
+        """,
         conn
     )
     conn.close()
@@ -76,7 +76,7 @@ def extract_imdb_id(raw):
 @st.cache_data(ttl=300)
 def get_poster(imdb_id):
     if not imdb_id or not OMDB_KEY:
-        return None, "geen imdb_id of geen OMDB_KEY"
+        return None
 
     url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
     r = requests.get(url, timeout=10)
@@ -84,16 +84,16 @@ def get_poster(imdb_id):
     try:
         data = r.json()
     except Exception:
-        return None, "JSON parse fout"
+        return None
 
     if data.get("Response") == "False":
-        return None, f"OMDb error: {data.get('Error')}"
+        return None
 
     poster = data.get("Poster")
     if poster and poster != "N/A":
-        return poster, None
+        return poster
 
-    return None, "Poster = N/A"
+    return None
 
 # -------------------------------------------------
 # UI CONTROLS
@@ -146,7 +146,7 @@ else:
 st.caption(f"🎞️ {len(results)} films gevonden")
 
 # -------------------------------------------------
-# PAGING (mobile only)
+# PAGING (mobile)
 # -------------------------------------------------
 if mobile_mode:
     if "page" not in st.session_state:
@@ -165,24 +165,32 @@ else:
 for _, row in view.iterrows():
 
     imdb_id = extract_imdb_id(row["IMDBLINK"])
-    poster, poster_info = get_poster(imdb_id)
+    poster = get_poster(imdb_id)
 
     imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else None
 
     title = row["FILM"]
     year = row["JAAR"]
+    length = row["LENGTE"]
     seen = row["BEKEKEN"]
 
+    # Lengte tekst
+    if pd.isna(length) or length == "":
+        length_text = "⏱ ? min"
+    else:
+        length_text = f"⏱ {int(length)} min"
+
+    # Gezien tekst
     if pd.isna(seen) or seen == "":
         seen_text = "🔴 Nooit gezien"
     else:
         seen_text = f"🟢 Laatst gezien: {seen}"
 
-    col1, col2 = st.columns([1, 4])
+    col1, col2 = st.columns([1.2, 4])
 
     with col1:
         if poster:
-            st.image(poster, width=80)
+            st.image(poster, width=110)
         else:
             st.caption("🖼️ geen poster")
 
@@ -192,10 +200,7 @@ for _, row in view.iterrows():
         else:
             st.markdown(f"**{title}** ({year})")
 
-        st.markdown(seen_text)
-
-        if poster_info:
-            st.caption(f"ℹ️ {poster_info}")
+        st.markdown(f"{length_text}  \n{seen_text}")
 
     st.divider()
 
