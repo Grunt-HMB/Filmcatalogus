@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import requests
-import re
 import os
 
 # -------------------------------------------------
@@ -16,7 +15,7 @@ st.markdown("## 🎬 Filmcatalogus")
 # -------------------------------------------------
 st.markdown("""
 <style>
-.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
 .chip {
     padding:6px 14px;
     border-radius:999px;
@@ -24,7 +23,6 @@ st.markdown("""
     cursor:pointer;
     font-size:0.9rem;
 }
-.chip.active { font-weight:700; }
 .star4 { background:#2ecc71; color:black; }
 .star3 { background:#f1c40f; color:black; }
 .star2 { background:#e67e22; color:black; }
@@ -35,7 +33,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------
-# CONFIG – Dropbox raw URLs (ONGEWIJZIGD)
+# CONFIG – Dropbox raw URLs (STABIEL)
 # -------------------------------------------------
 FILMS_DB_URL = (
     "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
@@ -66,7 +64,7 @@ def download_db(url, local_name):
     return local_name
 
 # -------------------------------------------------
-# Load databases (STABIEL)
+# Load databases (BEWEZEN STABIEL)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_films():
@@ -77,9 +75,7 @@ def load_films():
     )
     conn.close()
 
-    # 🔑 CRUCIAAL: JUISTE REGEX
     df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
-
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["RATING_UC"] = df["FILMRATING"].fillna("").str.upper()
     return df
@@ -224,18 +220,18 @@ for imdb_id, group in results.groupby("IMDB_ID", sort=False):
 
     col_poster, col_main = st.columns([1.1, 4])
 
-   with col_poster:
+    with col_poster:
         if poster:
             st.markdown(
                 f'<a href="{imdb_url}" target="_blank">'
                 f'<img src="{poster}" width="120"></a>',
                 unsafe_allow_html=True
             )
-    else:
-        st.image(
-            "https://via.placeholder.com/150x220?text=No+Poster",
-            width=120
-        )
+        else:
+            st.image(
+                "https://via.placeholder.com/120x180?text=No+Poster",
+                width=120
+            )
 
     with col_main:
         st.markdown(f"### {row['FILM']} ({row['JAAR']})")
@@ -248,6 +244,9 @@ for imdb_id, group in results.groupby("IMDB_ID", sort=False):
         for _, r in files.iterrows():
             dur, res, codec, name = parse_mfi(r["MFI"])
             size = parse_filesize_from_uniqueid(r["UNIQUEID"])
-            st.markdown(f"- **{name}**  \n  ⏱ {dur} – {res} – {codec} – {size}")
+            st.markdown(
+                f"- **{name}**  \n"
+                f"  ⏱ {dur} – {res} – {codec} – {size}"
+            )
 
     st.divider()
