@@ -12,6 +12,29 @@ st.set_page_config(page_title="Filmcatalogus", layout="centered")
 st.markdown("## 🎬 Filmcatalogus")
 
 # -------------------------------------------------
+# CHIP CSS
+# -------------------------------------------------
+st.markdown("""
+<style>
+.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.chip {
+    padding:6px 14px;
+    border-radius:999px;
+    border:1px solid #555;
+    cursor:pointer;
+    font-size:0.9rem;
+}
+.chip.active { font-weight:700; }
+.star4 { background:#2ecc71; color:black; }
+.star3 { background:#f1c40f; color:black; }
+.star2 { background:#e67e22; color:black; }
+.star1 { background:#e74c3c; color:white; }
+.classic { background:#9b59b6; color:white; }
+.box { background:#7f8c8d; color:white; }
+</style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------
 # CONFIG – Dropbox raw URLs
 # -------------------------------------------------
 FILMS_DB_URL = (
@@ -43,26 +66,18 @@ def download_db(url, local_name):
     return local_name
 
 # -------------------------------------------------
-# Load databases
+# Load databases  (ONGEWIJZIGD – STABIEL)
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_films():
     conn = sqlite3.connect(download_db(FILMS_DB_URL, "films.db"))
     df = pd.read_sql_query(
-        """
-        SELECT
-            FILM,
-            JAAR,
-            BEKEKEN,
-            IMDBLINK,
-            FILMRATING
-        FROM tbl_DBase_Films
-        """,
+        "SELECT FILM, JAAR, BEKEKEN, IMDBLINK, FILMRATING FROM tbl_DBase_Films",
         conn
     )
     conn.close()
 
-    df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\d{7,9})")
+    df["IMDB_ID"] = df["IMDBLINK"].str.extract(r"(tt\\d{7,9})")
     df["FILM_LC"] = df["FILM"].fillna("").str.lower()
     df["RATING_UC"] = df["FILMRATING"].fillna("").str.upper()
     return df
@@ -90,36 +105,34 @@ def load_mfi():
     return df
 
 # -------------------------------------------------
-# Helpers – MFI parsing
+# Helpers
 # -------------------------------------------------
 def parse_filesize_from_uniqueid(uniqueid):
     try:
         raw = uniqueid.split("*§*")[0]
         return f"{int(raw):,}".replace(",", ".")
-    except Exception:
+    except:
         return "?"
 
 
-def extract_video_codec_from_tokens(tokens):
+def extract_codec(tokens):
     for t in tokens:
-        t_up = t.upper()
-        if "HEVC" in t_up or "H265" in t_up:
-            if "MAIN 10" in t_up or "MAIN10" in t_up:
-                return "HEVC Main 10"
-            return "HEVC"
-        if "AVC" in t_up or "H264" in t_up:
+        u = t.upper()
+        if "HEVC" in u or "H265" in u:
+            return "HEVC Main 10" if "MAIN 10" in u else "HEVC"
+        if "AVC" in u or "H264" in u:
             return "AVC"
-        if "AV1" in t_up:
+        if "AV1" in u:
             return "AV1"
     return "?"
 
 
-def parse_mfi_tokens(mfi_text):
-    tokens = [t.strip() for t in mfi_text.split("§")]
+def parse_mfi(mfi):
+    tokens = [t.strip() for t in mfi.split("§")]
     duration = tokens[0] if len(tokens) > 0 else "?"
     resolution = tokens[3] if len(tokens) > 3 else "?"
-    filename = os.path.basename(tokens[-1]) if tokens else "?"
-    codec = extract_video_codec_from_tokens(tokens)
+    filename = os.path.basename(tokens[-1])
+    codec = extract_codec(tokens)
     return duration, resolution, codec, filename
 
 
@@ -133,81 +146,70 @@ def get_poster_and_imdb(imdb_id):
         params={"i": imdb_id, "apikey": OMDB_KEY},
         timeout=10
     )
-    try:
-        data = r.json()
-    except Exception:
-        return None, None
-
+    data = r.json()
     poster = data.get("Poster")
     if poster == "N/A":
         poster = None
-
-    imdb_url = f"https://www.imdb.com/title/{imdb_id}/"
-    return poster, imdb_url
+    return poster, f"https://www.imdb.com/title/{imdb_id}/"
 
 # -------------------------------------------------
-# Load all data
+# LOAD DATA
 # -------------------------------------------------
-films_df = load_films()
-moviemeter_df = load_moviemeter()
-mfi_df = load_mfi()
+films = load_films()
+moviemeter = load_moviemeter()
+mfi = load_mfi()
 
 # -------------------------------------------------
-# FILTERS
+# RATING CHIPS (LOGISCH MODEL)
 # -------------------------------------------------
-st.markdown("### 🔎 Filters")
-
-only_unseen = st.checkbox("Toon enkel niet bekeken films", value=False)
-
-rating_ui_to_db = {
-    "Alles": None,
-    "⭐⭐⭐⭐": ["TPR"],
-    "⭐⭐⭐": ["AFM", "A-FILM"],
-    "⭐⭐": ["BFM", "B-FILM"],
-    "⭐": ["CFM", "C-FILM"],
-    "Classic": ["CLS"]
+RATINGS = {
+    "⭐⭐⭐⭐": (["TPR"], "star4"),
+    "⭐⭐⭐":  (["AFM","A-FILM"], "star3"),
+    "⭐⭐":   (["BFM","B-FILM"], "star2"),
+    "⭐":    (["CFM","C-FILM"], "star1"),
+    "Classic": (["CLS"], "classic"),
+    "BOX": (["BOX"], "box")
 }
 
-selected_rating = st.radio(
-    "Beoordeling",
-    list(rating_ui_to_db.keys()),
-    horizontal=True
-)
+active_chip = st.session_state.get("active_chip")
+
+st.markdown("### Beoordeling")
+st.markdown("<div class='chip-row'>", unsafe_allow_html=True)
+
+for label, (codes, css) in RATINGS.items():
+    count = films[films["RATING_UC"].isin(codes)]["IMDB_ID"].nunique()
+    if st.button(f"{label} ({count})"):
+        st.session_state.active_chip = label
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # -------------------------------------------------
 # SEARCH
 # -------------------------------------------------
-query = st.text_input("🔍 Zoek film", placeholder="Typ titel en druk op Enter")
+query = st.text_input("🔍 Zoek film (optioneel)")
 
-if not query:
+if not query and not st.session_state.get("active_chip"):
+    st.info("Zoek een film of klik op een ⭐-chip")
     st.stop()
 
-results = films_df[films_df["FILM_LC"].str.contains(query.lower(), na=False)]
+results = films.copy()
 
-if only_unseen:
-    results = results[
-        results["BEKEKEN"].isna()
-        | (results["BEKEKEN"].astype(str).str.strip() == "")
-    ]
+if st.session_state.get("active_chip"):
+    codes = RATINGS[st.session_state.active_chip][0]
+    results = results[results["RATING_UC"].isin(codes)]
 
-if selected_rating != "Alles":
-    allowed = rating_ui_to_db[selected_rating]
-    results = results[results["RATING_UC"].isin(allowed)]
+if query:
+    results = results[results["FILM_LC"].str.contains(query.lower(), na=False)]
 
 if results.empty:
-    st.warning("Geen films gevonden met deze filters")
+    st.warning("Geen films gevonden")
     st.stop()
-
-groups = results.groupby("IMDB_ID", sort=False)
 
 # -------------------------------------------------
 # RENDER
 # -------------------------------------------------
-for imdb_id, group in groups:
+for imdb_id, group in results.groupby("IMDB_ID", sort=False):
 
-    title = group.iloc[0]["FILM"]
-    year = group.iloc[0]["JAAR"]
-
+    row = group.iloc[0]
     poster, imdb_url = get_poster_and_imdb(imdb_id)
 
     col_poster, col_main = st.columns([1.1, 4])
@@ -219,27 +221,18 @@ for imdb_id, group in groups:
                 f'<img src="{poster}" width="150"></a>',
                 unsafe_allow_html=True
             )
-        else:
-            st.caption("🖼️ geen cover")
 
     with col_main:
-        st.markdown(f"### {title} ({year})")
+        st.markdown(f"### {row['FILM']} ({row['JAAR']})")
 
-        mm_row = moviemeter_df[moviemeter_df["IMDBTT"] == imdb_id]
-        if not mm_row.empty:
-            plot = mm_row.iloc[0]["MOVIEMETER"].split("*§*")[0]
-            st.markdown(f"_{plot}_")
+        mm = moviemeter[moviemeter["IMDBTT"] == imdb_id]
+        if not mm.empty:
+            st.markdown(f"_{mm.iloc[0]['MOVIEMETER'].split('*§*')[0]}_")
 
-        mfi_hits = mfi_df[mfi_df["IMDBTT"] == imdb_id]
-        if not mfi_hits.empty:
-            st.markdown("**Bestanden**")
-            for _, r in mfi_hits.iterrows():
-                duration, res, codec, fname = parse_mfi_tokens(r["MFI"])
-                size = parse_filesize_from_uniqueid(r["UNIQUEID"])
-
-                st.markdown(
-                    f"- **{fname}**  \n"
-                    f"  ⏱ {duration} – {res} – {codec} – {size}"
-                )
+        files = mfi[mfi["IMDBTT"] == imdb_id]
+        for _, r in files.iterrows():
+            dur, res, codec, name = parse_mfi(r["MFI"])
+            size = parse_filesize_from_uniqueid(r["UNIQUEID"])
+            st.markdown(f"- **{name}**  \n  ⏱ {dur} – {res} – {codec} – {size}")
 
     st.divider()
