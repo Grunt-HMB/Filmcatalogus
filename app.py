@@ -14,7 +14,6 @@ st.set_page_config(
 )
 
 st.markdown("## 🎬 Filmcatalogus")
-st.caption("Chronologisch gesorteerd (oud → nieuw)")
 
 # -------------------------------------------------
 # CONFIG
@@ -24,20 +23,16 @@ DROPBOX_DB_URL = (
     "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 )
 
-# OMDb key: eerst secrets, fallback naar env var
-OMDB_KEY = None
-if "OMDB_KEY" in st.secrets:
-    OMDB_KEY = st.secrets["OMDB_KEY"]
-else:
-    OMDB_KEY = os.getenv("OMDB_KEY")
+# OMDb key: eerst Streamlit secrets, fallback env var
+OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
 
 # -------------------------------------------------
 # DEBUG (mag later weg)
 # -------------------------------------------------
-#with st.expander("🛠 Debug"):
-#    st.write("OMDB_KEY aanwezig:", bool(OMDB_KEY))
-#    if OMDB_KEY:
-#        st.write("OMDB_KEY start met:", OMDB_KEY[:4] + "...")
+with st.expander("🛠 Debug"):
+    st.write("OMDB_KEY aanwezig:", bool(OMDB_KEY))
+    if OMDB_KEY:
+        st.write("OMDB_KEY start met:", OMDB_KEY[:4] + "...")
 
 # -------------------------------------------------
 # Download DB
@@ -51,7 +46,7 @@ def download_db():
     return "films.db"
 
 # -------------------------------------------------
-# Load data
+# Load data + index
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_data():
@@ -62,6 +57,10 @@ def load_data():
         conn
     )
     conn.close()
+
+    # 🔎 index voor sneller zoeken
+    df["FILM_LC"] = df["FILM"].fillna("").str.lower()
+
     return df
 
 # -------------------------------------------------
@@ -99,8 +98,18 @@ def get_poster(imdb_id):
 # -------------------------------------------------
 # UI CONTROLS
 # -------------------------------------------------
+query = st.text_input(
+    "🔍 Zoek film",
+    placeholder="Typ titel en druk op Enter"
+)
+
+sort_choice = st.radio(
+    "Sorteer op",
+    ["Jaar (oud → nieuw)", "Naam (A → Z)"],
+    horizontal=True
+)
+
 mobile_mode = st.checkbox("📱 Mobiele weergave", value=False)
-query = st.text_input("🔍 Zoek film")
 
 # -------------------------------------------------
 # DATA
@@ -108,23 +117,31 @@ query = st.text_input("🔍 Zoek film")
 df = load_data()
 
 if not query:
-    st.info("Begin te typen om te zoeken")
+    st.info("Begin te typen en druk op Enter")
     st.stop()
 
-results = df[df["FILM"].str.contains(query, case=False, na=False)]
+q = query.lower()
+results = df[df["FILM_LC"].str.contains(q, na=False)]
 
 if results.empty:
     st.warning("Geen films gevonden")
     st.stop()
 
 # -------------------------------------------------
-# SORT (ALTIJD OUD → NIEUW)
+# SORTERING
 # -------------------------------------------------
-results = results.sort_values(
-    by=["JAAR", "FILM"],
-    ascending=[True, True],
-    na_position="last"
-)
+if sort_choice == "Naam (A → Z)":
+    results = results.sort_values(
+        by="FILM",
+        key=lambda s: s.str.lower(),
+        na_position="last"
+    )
+else:
+    results = results.sort_values(
+        by=["JAAR", "FILM"],
+        ascending=[True, True],
+        na_position="last"
+    )
 
 st.caption(f"🎞️ {len(results)} films gevonden")
 
