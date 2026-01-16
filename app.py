@@ -8,11 +8,7 @@ import os
 # -------------------------------------------------
 # Page config
 # -------------------------------------------------
-st.set_page_config(
-    page_title="Filmcatalogus",
-    layout="centered"
-)
-
+st.set_page_config(page_title="Filmcatalogus", layout="centered")
 st.markdown("## 🎬 Filmcatalogus")
 
 # -------------------------------------------------
@@ -22,7 +18,6 @@ DROPBOX_DB_URL = (
     "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
     "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 )
-
 OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
 
 # -------------------------------------------------
@@ -37,12 +32,11 @@ def download_db():
     return "films.db"
 
 # -------------------------------------------------
-# Load data + index
+# Load data + indexes
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_data():
-    db_path = download_db()
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(download_db())
     df = pd.read_sql_query(
         """
         SELECT
@@ -50,7 +44,8 @@ def load_data():
             JAAR,
             LENGTE,
             BEKEKEN,
-            IMDBLINK
+            IMDBLINK,
+            FILMRATING
         FROM tbl_DBase_Films
         """,
         conn
@@ -66,12 +61,9 @@ def load_data():
 # Helpers
 # -------------------------------------------------
 def parse_length_to_minutes(raw):
-    if raw is None:
+    if not raw:
         return None
-
-    s = str(raw).strip().lower()
-    if not s:
-        return None
+    s = str(raw).lower().strip()
 
     if re.match(r"^\d{1,2}:\d{2}:\d{2}$", s):
         h, m, _ = s.split(":")
@@ -85,90 +77,102 @@ def parse_length_to_minutes(raw):
         total += int(h.group(1)) * 60
     if m:
         total += int(m.group(1))
+    return total if total else None
 
-    return total if total > 0 else None
+
+def rating_to_stars(raw):
+    if not raw:
+        return ""
+    r = raw.upper()
+    if r == "TPR":
+        return "⭐⭐⭐⭐"
+    if r in ("AFM", "A-FILM"):
+        return "⭐⭐⭐"
+    if r in ("BFM", "B-FILM"):
+        return "⭐⭐"
+    if r in ("CFM", "C-FILM"):
+        return "⭐"
+    return ""
 
 
 @st.cache_data(ttl=300)
 def get_poster(imdb_id):
     if not imdb_id or not OMDB_KEY:
         return None
-
-    url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
-    r = requests.get(url, timeout=10)
-
+    r = requests.get(
+        f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}",
+        timeout=10
+    )
     try:
         data = r.json()
     except Exception:
         return None
-
     poster = data.get("Poster")
-    if poster and poster != "N/A":
-        return poster
-
-    return None
+    return poster if poster and poster != "N/A" else None
 
 # -------------------------------------------------
-# UI CONTROLS
+# SORT STATE (klik = toggle)
 # -------------------------------------------------
-query = st.text_input(
-    "🔍 Zoek film",
-    placeholder="Typ titel en druk op Enter"
-)
+if "sort_field" not in st.session_state:
+    st.session_state.sort_field = "JAAR"
+    st.session_state.sort_asc = True
 
-sort_field = st.segmented_control(
-    "Sorteren op",
-    options=["Jaar", "Naam"],
-    default="Jaar"
-)
+colA, colB = st.columns(2)
 
-reverse_order = st.toggle(
-    "Omgekeerde volgorde",
-    value=False
-)
+with colA:
+    if st.button("Sorteer op naam"):
+        if st.session_state.sort_field == "FILM":
+            st.session_state.sort_asc = not st.session_state.sort_asc
+        else:
+            st.session_state.sort_field = "FILM"
+            st.session_state.sort_asc = True
+
+with colB:
+    if st.button("Sorteer op jaar"):
+        if st.session_state.sort_field == "JAAR":
+            st.session_state.sort_asc = not st.session_state.sort_asc
+        else:
+            st.session_state.sort_field = "JAAR"
+            st.session_state.sort_asc = True
 
 # -------------------------------------------------
-# DATA
+# SEARCH
 # -------------------------------------------------
+query = st.text_input("🔍 Zoek film", placeholder="Typ titel en druk op Enter")
+
 df = load_data()
 
 if not query:
-    st.info("Begin te typen en druk op Enter")
     st.stop()
 
-q = query.lower()
-results = df[df["FILM_LC"].str.contains(q, na=False)]
+results = df[df["FILM_LC"].str.contains(query.lower(), na=False)]
 
 if results.empty:
     st.warning("Geen films gevonden")
     st.stop()
 
 # -------------------------------------------------
-# SORTERING
+# SORTING
 # -------------------------------------------------
-ascending = not reverse_order
-
-if sort_field == "Naam":
+if st.session_state.sort_field == "FILM":
     results = results.sort_values(
-        by="FILM_LC",
-        ascending=ascending
+        by=["FILM_LC"],
+        ascending=st.session_state.sort_asc
     )
 else:
     results = results.sort_values(
         by=["JAAR", "FILM_LC"],
-        ascending=[ascending, True]
+        ascending=[st.session_state.sort_asc, True]
     )
 
-# Extra: IMDb groepering bij elkaar houden
+# IMDb groepen bij elkaar houden
 results = results.sort_values(
     by=["IMDB_ID", "JAAR"],
     kind="stable"
 )
 
-st.caption(f"🎞️ {len(results)} films gevonden")
-
 # -------------------------------------------------
-# RENDER (met IMDb-groepen)
+# RENDER
 # -------------------------------------------------
 current_imdb = None
 
@@ -176,33 +180,23 @@ for _, row in results.iterrows():
 
     imdb_id = row["IMDB_ID"]
 
-    # 🔗 NIEUWE GROEP
     if imdb_id != current_imdb:
         current_imdb = imdb_id
         st.markdown("---")
-        if imdb_id:
-            st.markdown(f"### IMDb-groep: `{imdb_id}`")
 
-    poster = get_poster(imdb_id)
+        poster = get_poster(imdb_id)
+        if poster:
+            st.image(poster, width=160)
 
     minutes = parse_length_to_minutes(row["LENGTE"])
-    length_text = f"⏱ {minutes} min" if minutes else "⏱ ? min"
+    length_txt = f"⏱ {minutes} min" if minutes else "⏱ ? min"
+    stars = rating_to_stars(row["FILMRATING"])
 
     seen = row["BEKEKEN"]
-    seen_text = "🔴 Nooit gezien" if not seen else f"🟢 Laatst gezien: {seen}"
+    seen_txt = "🔴 Nooit gezien" if not seen else f"🟢 Laatst gezien: {seen}"
 
-    col1, col2 = st.columns([1.2, 4])
-
-    with col1:
-        if poster:
-            st.image(poster, width=140)
-        else:
-            st.caption("🖼️ geen poster")
-
-    with col2:
-        st.markdown(f"**{row['FILM']}** ({row['JAAR']})")
-        st.markdown(f"{length_text}  \n{seen_text}")
-
-# -------------------------------------------------
-# END
-# -------------------------------------------------
+    st.markdown(
+        f"**{row['FILM']}** ({row['JAAR']})  {stars}  \n"
+        f"{length_txt}  \n"
+        f"{seen_txt}"
+    )
