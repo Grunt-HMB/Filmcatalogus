@@ -23,7 +23,6 @@ DROPBOX_DB_URL = (
     "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 )
 
-# OMDb key
 OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
 
 # -------------------------------------------------
@@ -71,6 +70,40 @@ def extract_imdb_id(raw):
         return None
     m = re.search(r"(tt\d{7,9})", str(raw))
     return m.group(1) if m else None
+
+
+def parse_length_to_minutes(raw):
+    """
+    Ondersteunt:
+    - '1 h 30 min'
+    - '2 h 5 min'
+    - '01:43:49'
+    - None / leeg
+    Retourneert: int minuten of None
+    """
+    if raw is None:
+        return None
+
+    s = str(raw).strip().lower()
+    if not s:
+        return None
+
+    # HH:MM:SS
+    if re.match(r"^\d{1,2}:\d{2}:\d{2}$", s):
+        h, m, _ = s.split(":")
+        return int(h) * 60 + int(m)
+
+    # X h Y min
+    hours = re.search(r"(\d+)\s*h", s)
+    minutes = re.search(r"(\d+)\s*min", s)
+
+    total = 0
+    if hours:
+        total += int(hours.group(1)) * 60
+    if minutes:
+        total += int(minutes.group(1))
+
+    return total if total > 0 else None
 
 
 @st.cache_data(ttl=300)
@@ -171,16 +204,16 @@ for _, row in view.iterrows():
 
     title = row["FILM"]
     year = row["JAAR"]
-    length = row["LENGTE"]
+    raw_length = row["LENGTE"]
     seen = row["BEKEKEN"]
 
-    # Lengte tekst
-    if pd.isna(length) or length == "":
+    minutes = parse_length_to_minutes(raw_length)
+
+    if minutes is None:
         length_text = "⏱ ? min"
     else:
-        length_text = f"⏱ {int(length)} min"
+        length_text = f"⏱ {minutes} min"
 
-    # Gezien tekst
     if pd.isna(seen) or seen == "":
         seen_text = "🔴 Nooit gezien"
     else:
