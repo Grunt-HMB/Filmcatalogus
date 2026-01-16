@@ -12,13 +12,15 @@ st.set_page_config(page_title="Filmcatalogus", layout="centered")
 st.markdown("## 🎬 Filmcatalogus")
 
 # -------------------------------------------------
-# CONFIG
+# CONFIG (ALLEEN uit Secrets / env)
 # -------------------------------------------------
 DROPBOX_DB_URL = (
     "https://www.dropbox.com/scl/fi/29xqcb68hen6fii8qlt07/"
     "DBase-Films.db?rlkey=6bozrymb3m6vh5llej56do1nh&raw=1"
 )
+
 OMDB_KEY = st.secrets.get("OMDB_KEY", os.getenv("OMDB_KEY"))
+TMDB_KEY = st.secrets.get("TMDB_KEY", os.getenv("TMDB_KEY"))
 
 # -------------------------------------------------
 # Download DB
@@ -84,43 +86,77 @@ def rating_to_stars(raw):
     if not raw:
         return ""
     r = raw.upper()
-    if r == "TPR":
-        return "⭐⭐⭐⭐"
-    if r in ("AFM", "A-FILM"):
-        return "⭐⭐⭐"
-    if r in ("BFM", "B-FILM"):
-        return "⭐⭐"
-    if r in ("CFM", "C-FILM"):
-        return "⭐"
-    return ""
+    return {
+        "TPR": "⭐⭐⭐⭐",
+        "AFM": "⭐⭐⭐", "A-FILM": "⭐⭐⭐",
+        "BFM": "⭐⭐", "B-FILM": "⭐⭐",
+        "CFM": "⭐", "C-FILM": "⭐"
+    }.get(r, "")
 
-
+# -------------------------------------------------
+# OMDb – poster
+# -------------------------------------------------
 @st.cache_data(ttl=3600)
-def get_imdb_info(imdb_id):
-    """
-    Haalt poster + plot op in 1 call
-    """
+def get_poster_omdb(imdb_id):
     if not imdb_id or not OMDB_KEY:
-        return None, None
+        return None
 
     r = requests.get(
-        f"https://www.omdbapi.com/?i={imdb_id}&plot=full&apikey={OMDB_KEY}",
+        "https://www.omdbapi.com/",
+        params={"i": imdb_id, "apikey": OMDB_KEY},
         timeout=10
     )
     try:
         data = r.json()
     except Exception:
-        return None, None
+        return None
 
     poster = data.get("Poster")
-    plot = data.get("Plot")
+    return poster if poster and poster != "N/A" else None
 
-    if poster == "N/A":
-        poster = None
-    if plot == "N/A":
-        plot = None
+# -------------------------------------------------
+# TMDB – Nederlandse plot
+# -------------------------------------------------
+@st.cache_data(ttl=3600)
+def get_nl_plot_tmdb(imdb_id):
+    if not imdb_id or not TMDB_KEY:
+        return None
 
-    return poster, plot
+    # IMDb → TMDB ID
+    r = requests.get(
+        f"https://api.themoviedb.org/3/find/{imdb_id}",
+        params={
+            "api_key": TMDB_KEY,
+            "external_source": "imdb_id"
+        },
+        timeout=10
+    )
+    try:
+        data = r.json()
+    except Exception:
+        return None
+
+    if not data.get("movie_results"):
+        return None
+
+    tmdb_id = data["movie_results"][0]["id"]
+
+    # NL plot
+    r = requests.get(
+        f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+        params={
+            "api_key": TMDB_KEY,
+            "language": "nl-NL"
+        },
+        timeout=10
+    )
+    try:
+        data = r.json()
+    except Exception:
+        return None
+
+    plot = data.get("overview")
+    return plot if plot else None
 
 # -------------------------------------------------
 # SORT STATE (klik = toggle)
@@ -167,19 +203,13 @@ if results.empty:
 # SORT
 # -------------------------------------------------
 if st.session_state.sort_field == "FILM":
-    results = results.sort_values(
-        by="FILM_LC",
-        ascending=st.session_state.sort_asc
-    )
+    results = results.sort_values("FILM_LC", ascending=st.session_state.sort_asc)
 else:
     results = results.sort_values(
-        by=["JAAR", "FILM_LC"],
+        ["JAAR", "FILM_LC"],
         ascending=[st.session_state.sort_asc, True]
     )
 
-# -------------------------------------------------
-# GROUP BY IMDb
-# -------------------------------------------------
 groups = results.groupby("IMDB_ID", sort=False)
 
 # -------------------------------------------------
@@ -187,7 +217,8 @@ groups = results.groupby("IMDB_ID", sort=False)
 # -------------------------------------------------
 for imdb_id, group in groups:
 
-    poster, plot = get_imdb_info(imdb_id)
+    poster = get_poster_omdb(imdb_id)
+    plot_nl = get_nl_plot_tmdb(imdb_id)
 
     col_poster, col_content = st.columns([1.3, 4])
 
@@ -198,29 +229,23 @@ for imdb_id, group in groups:
             st.caption("🖼️ geen poster")
 
     with col_content:
-        if plot:
-            st.markdown(f"_{plot}_")
+        if plot_nl:
+            st.markdown(f"_{plot_nl}_")
         else:
-            st.caption("Geen plot beschikbaar")
+            st.caption("Geen Nederlandse plot beschikbaar")
 
         cols = st.columns(len(group))
 
         for col, (_, row) in zip(cols, group.iterrows()):
             minutes = parse_length_to_minutes(row["LENGTE"])
-            length_txt = f"{minutes} min" if minutes else "?"
-
             stars = rating_to_stars(row["FILMRATING"])
 
             seen = row["BEKEKEN"]
-            if not seen or str(seen).strip() == "":
-                seen_txt = "🔴 Nooit"
-            else:
-                seen_txt = f"🟢 {seen}"
+            seen_txt = "🔴 Nooit" if not seen or str(seen).strip() == "" else f"🟢 {seen}"
 
             col.markdown(
-                f"**{row['FILM']}**  \n"
-                f"{row['JAAR']}  \n"
-                f"⏱ {length_txt}  \n"
+                f"**{row['FILM']}** ({row['JAAR']})  \n"
+                f"⏱ {minutes if minutes else '?'} min  \n"
                 f"{stars}  \n"
                 f"{seen_txt}"
             )
