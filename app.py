@@ -30,24 +30,35 @@ def load_data():
     conn.close()
     return df
 
-# ---------------- OMDb ----------------
-@st.cache_data(ttl=86400)
-def get_poster(imdb_id):
-    if not imdb_id:
-        return None
-    url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
-    r = requests.get(url)
-    data = r.json()
-    if data.get("Poster") and data["Poster"] != "N/A":
-        return data["Poster"]
-    return None
-
 # ---------------- IMDb ID helper ----------------
 def extract_imdb_id(raw):
     if not raw:
         return None
     m = re.search(r"(tt\d+)", str(raw))
     return m.group(1) if m else None
+
+# ---------------- OMDb (DEBUG) ----------------
+@st.cache_data(ttl=300)
+def get_poster_debug(imdb_id):
+    if not imdb_id:
+        return None, "geen imdb_id"
+
+    url = f"https://www.omdbapi.com/?i={imdb_id}&apikey={OMDB_KEY}"
+    r = requests.get(url, timeout=10)
+
+    try:
+        data = r.json()
+    except Exception:
+        return None, f"JSON fout: {r.text}"
+
+    if data.get("Response") == "False":
+        return None, f"OMDb error: {data.get('Error')}"
+
+    poster = data.get("Poster")
+    if poster and poster != "N/A":
+        return poster, None
+
+    return None, "Poster = N/A (geen poster via OMDb)"
 
 # ---------------- UI ----------------
 st.markdown("## 🎬 Filmcatalogus")
@@ -100,7 +111,8 @@ else:
 for _, row in view.iterrows():
 
     imdb_id = extract_imdb_id(row["IMDBLINK"])
-    poster = get_poster(imdb_id)
+    poster, poster_info = get_poster_debug(imdb_id)
+
     imdb_url = f"https://www.imdb.com/title/{imdb_id}/" if imdb_id else None
 
     title = row["FILM"]
@@ -117,6 +129,8 @@ for _, row in view.iterrows():
     with col1:
         if poster:
             st.image(poster, width=80)
+        else:
+            st.caption("🖼️ geen poster")
 
     with col2:
         if imdb_url:
@@ -125,6 +139,10 @@ for _, row in view.iterrows():
             st.markdown(f"**{title}** ({year})")
 
         st.markdown(seen_text)
+
+        # 🔎 DEBUG INFO
+        if poster_info:
+            st.caption(f"ℹ️ {poster_info}")
 
     st.divider()
 
