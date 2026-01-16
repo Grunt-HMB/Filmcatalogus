@@ -11,28 +11,6 @@ st.set_page_config(page_title="Filmcatalogus", layout="centered")
 st.markdown("## 🎬 Filmcatalogus")
 
 # -------------------------------------------------
-# CHIP CSS
-# -------------------------------------------------
-st.markdown("""
-<style>
-.chip-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-.chip {
-    padding:6px 14px;
-    border-radius:999px;
-    border:1px solid #555;
-    cursor:pointer;
-    font-size:0.9rem;
-}
-.star4 { background:#2ecc71; color:black; }
-.star3 { background:#f1c40f; color:black; }
-.star2 { background:#e67e22; color:black; }
-.star1 { background:#e74c3c; color:white; }
-.classic { background:#9b59b6; color:white; }
-.box { background:#7f8c8d; color:white; }
-</style>
-""", unsafe_allow_html=True)
-
-# -------------------------------------------------
 # CONFIG – Dropbox raw URLs (STABIEL)
 # -------------------------------------------------
 FILMS_DB_URL = (
@@ -64,7 +42,7 @@ def download_db(url, local_name):
     return local_name
 
 # -------------------------------------------------
-# Load databases (BEWEZEN STABIEL)
+# Load databases
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_films():
@@ -134,10 +112,9 @@ def parse_mfi(mfi):
     return duration, resolution, codec, filename
 
 
-@st.cache_data(ttl=3600)
-def get_poster_and_imdb(imdb_id):
+def get_omdb_poster(imdb_id):
     if not imdb_id or not OMDB_KEY:
-        return None, None
+        return None
 
     r = requests.get(
         "https://www.omdbapi.com/",
@@ -147,12 +124,21 @@ def get_poster_and_imdb(imdb_id):
     try:
         data = r.json()
     except:
-        return None, None
+        return None
 
     poster = data.get("Poster")
     if poster == "N/A":
-        poster = None
-    return poster, f"https://www.imdb.com/title/{imdb_id}/"
+        return None
+    return poster
+
+
+def get_moviemeter_cover(moviemeter_text):
+    if not moviemeter_text:
+        return None
+    for part in moviemeter_text.split("*§*"):
+        if part.strip().startswith("http") and "cover" in part:
+            return part.strip()
+    return None
 
 # -------------------------------------------------
 # LOAD DATA
@@ -162,15 +148,29 @@ moviemeter = load_moviemeter()
 mfi = load_mfi()
 
 # -------------------------------------------------
+# SORTING
+# -------------------------------------------------
+st.markdown("### Sorteren")
+c1, c2 = st.columns(2)
+
+with c1:
+    sort_field = st.radio("Sorteer op", ["Naam", "Jaar"], horizontal=True)
+
+with c2:
+    sort_dir = st.radio("Volgorde", ["Oplopend", "Aflopend"], horizontal=True)
+
+ascending = (sort_dir == "Oplopend")
+
+# -------------------------------------------------
 # RATING CHIPS
 # -------------------------------------------------
 RATINGS = {
-    "⭐⭐⭐⭐": (["TPR"], "star4"),
-    "⭐⭐⭐":  (["AFM","A-FILM"], "star3"),
-    "⭐⭐":   (["BFM","B-FILM"], "star2"),
-    "⭐":    (["CFM","C-FILM"], "star1"),
-    "Classic": (["CLS"], "classic"),
-    "BOX": (["BOX"], "box")
+    "⭐⭐⭐⭐": ["TPR"],
+    "⭐⭐⭐": ["AFM", "A-FILM"],
+    "⭐⭐": ["BFM", "B-FILM"],
+    "⭐": ["CFM", "C-FILM"],
+    "Classic": ["CLS"],
+    "BOX": ["BOX"]
 }
 
 if "active_chip" not in st.session_state:
@@ -183,7 +183,7 @@ with cols[0]:
     if st.button(f"Alles ({films['IMDB_ID'].nunique()})"):
         st.session_state.active_chip = None
 
-for col, (label, (codes, _)) in zip(cols[1:], RATINGS.items()):
+for col, (label, codes) in zip(cols[1:], RATINGS.items()):
     count = films[films["RATING_UC"].isin(codes)]["IMDB_ID"].nunique()
     with col:
         if st.button(f"{label} ({count})"):
@@ -201,8 +201,7 @@ if not query and not st.session_state.active_chip:
 results = films.copy()
 
 if st.session_state.active_chip:
-    codes = RATINGS[st.session_state.active_chip][0]
-    results = results[results["RATING_UC"].isin(codes)]
+    results = results[results["RATING_UC"].isin(RATINGS[st.session_state.active_chip])]
 
 if query:
     results = results[results["FILM_LC"].str.contains(query.lower(), na=False)]
@@ -211,22 +210,30 @@ if results.empty:
     st.warning("Geen films gevonden")
     st.stop()
 
+# SORT
+if sort_field == "Naam":
+    results = results.sort_values("FILM_LC", ascending=ascending)
+else:
+    results = results.sort_values("JAAR", ascending=ascending)
+
 # -------------------------------------------------
 # RENDER
 # -------------------------------------------------
 for imdb_id, group in results.groupby("IMDB_ID", sort=False):
     row = group.iloc[0]
-    poster, imdb_url = get_poster_and_imdb(imdb_id)
+
+    poster_url = get_omdb_poster(imdb_id)
+
+    if not poster_url:
+        mm = moviemeter[moviemeter["IMDBTT"] == imdb_id]
+        if not mm.empty:
+            poster_url = get_moviemeter_cover(mm.iloc[0]["MOVIEMETER"])
 
     col_poster, col_main = st.columns([1.1, 4])
 
     with col_poster:
-        if poster:
-            st.markdown(
-                f'<a href="{imdb_url}" target="_blank">'
-                f'<img src="{poster}" width="120"></a>',
-                unsafe_allow_html=True
-            )
+        if poster_url:
+            st.image(poster_url, width=120)
         else:
             st.image(
                 "https://via.placeholder.com/120x180?text=No+Poster",
