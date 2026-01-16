@@ -32,7 +32,7 @@ def download_db():
     return "films.db"
 
 # -------------------------------------------------
-# Load data + indexes
+# Load data
 # -------------------------------------------------
 @st.cache_data(ttl=600)
 def load_data():
@@ -117,18 +117,18 @@ if "sort_field" not in st.session_state:
     st.session_state.sort_field = "JAAR"
     st.session_state.sort_asc = True
 
-colA, colB = st.columns(2)
+col1, col2 = st.columns(2)
 
-with colA:
-    if st.button("Sorteer op naam"):
+with col1:
+    if st.button("Naam"):
         if st.session_state.sort_field == "FILM":
             st.session_state.sort_asc = not st.session_state.sort_asc
         else:
             st.session_state.sort_field = "FILM"
             st.session_state.sort_asc = True
 
-with colB:
-    if st.button("Sorteer op jaar"):
+with col2:
+    if st.button("Jaar"):
         if st.session_state.sort_field == "JAAR":
             st.session_state.sort_asc = not st.session_state.sort_asc
         else:
@@ -152,11 +152,11 @@ if results.empty:
     st.stop()
 
 # -------------------------------------------------
-# SORTING
+# SORT (ENKEL HIER SORTEREN!)
 # -------------------------------------------------
 if st.session_state.sort_field == "FILM":
     results = results.sort_values(
-        by=["FILM_LC"],
+        by="FILM_LC",
         ascending=st.session_state.sort_asc
     )
 else:
@@ -165,38 +165,42 @@ else:
         ascending=[st.session_state.sort_asc, True]
     )
 
-# IMDb groepen bij elkaar houden
-results = results.sort_values(
-    by=["IMDB_ID", "JAAR"],
-    kind="stable"
-)
+# -------------------------------------------------
+# GROUP BY IMDb (NIET SORTEREN!)
+# -------------------------------------------------
+groups = results.groupby("IMDB_ID", sort=False)
 
 # -------------------------------------------------
 # RENDER
 # -------------------------------------------------
-current_imdb = None
+for imdb_id, group in groups:
 
-for _, row in results.iterrows():
+    poster = get_poster(imdb_id)
 
-    imdb_id = row["IMDB_ID"]
+    col_poster, col_films = st.columns([1.2, 4])
 
-    if imdb_id != current_imdb:
-        current_imdb = imdb_id
-        st.markdown("---")
-
-        poster = get_poster(imdb_id)
+    with col_poster:
         if poster:
-            st.image(poster, width=160)
+            st.image(poster, width=140)
+        else:
+            st.caption("🖼️ geen poster")
 
-    minutes = parse_length_to_minutes(row["LENGTE"])
-    length_txt = f"⏱ {minutes} min" if minutes else "⏱ ? min"
-    stars = rating_to_stars(row["FILMRATING"])
+    with col_films:
+        cols = st.columns(len(group))
 
-    seen = row["BEKEKEN"]
-    seen_txt = "🔴 Nooit gezien" if not seen else f"🟢 Laatst gezien: {seen}"
+        for col, (_, row) in zip(cols, group.iterrows()):
+            minutes = parse_length_to_minutes(row["LENGTE"])
+            length_txt = f"{minutes} min" if minutes else "?"
+            stars = rating_to_stars(row["FILMRATING"])
 
-    st.markdown(
-        f"**{row['FILM']}** ({row['JAAR']})  {stars}  \n"
-        f"{length_txt}  \n"
-        f"{seen_txt}"
-    )
+            seen = row["BEKEKEN"]
+            seen_txt = "🔴" if not seen else "🟢"
+
+            col.markdown(
+                f"**{row['FILM']}**  \n"
+                f"{row['JAAR']}  \n"
+                f"⏱ {length_txt}  \n"
+                f"{stars} {seen_txt}"
+            )
+
+    st.divider()
